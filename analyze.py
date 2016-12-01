@@ -55,6 +55,40 @@ size = (int(cap.get(cv2.cv.CV_CAP_PROP_FRAME_WIDTH)),
         int(cap.get(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT)))
 out = cv2.VideoWriter('video.avi', cv2.cv.FOURCC('X','V','I','D'), 20, size)
 
+
+# Setup SimpleBlobDetector parameters.
+params = cv2.SimpleBlobDetector_Params()
+ 
+# Filter by Area.
+params.filterByArea = True
+params.minArea = 10
+
+# Change thresholds
+params.minThreshold = 0
+params.maxThreshold = 256
+
+# Filter by Circularity
+params.filterByCircularity = False
+params.minCircularity = 0.05
+
+# Filter by Convexity
+params.filterByConvexity = False
+params.minConvexity = 0.2
+ 
+# Filter by Inertia
+params.filterByInertia = False
+params.minInertiaRatio = 0.01
+
+# Create a detector with the parameters
+ver = (cv2.__version__).split('.')
+if int(ver[0]) < 3 :
+    detector = cv2.SimpleBlobDetector(params)
+else: 
+    detector = cv2.SimpleBlobDetector_create(params)
+
+
+prevCenters = []
+
 while cap.isOpened():
     ret, frame = grabframe(cap)
 
@@ -71,27 +105,80 @@ while cap.isOpened():
 
         diff = scaleOneSided(Gmag)
 
-        ret, track = cv2.threshold(diff, 128, 255, cv2.THRESH_BINARY)
+        ret, track = cv2.threshold(diff, 128, 256, cv2.THRESH_BINARY)
         kernel = np.ones((3,3), np.uint8)
         kernelOpen = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=np.uint8)
         track = cv2.morphologyEx(track, cv2.MORPH_CLOSE, kernel)
         track = cv2.morphologyEx(track, cv2.MORPH_OPEN, kernel)
+        diff = np.maximum(diff, track)
 
-        disp = cv2.max(0.8 * track / 255, 0.4 * prevTrack / 255)
-        disp = cv2.max(disp, 0.2 * prevPrevTrack / 255)
-        disp = cv2.max(disp, 0.1 * prevPrevTrack / 255)
-        disp = frame + disp
+        contours, heirarchy = cv2.findContours(track, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        #disp = cv2.max(0.8 * track / 255, 0.4 * prevTrack / 255)
+        #disp = cv2.max(disp, 0.2 * prevPrevTrack / 255)
+        #disp = cv2.max(disp, 0.1 * prevPrevTrack / 255)
+        #disp = frame + track
+        disp = frame
 
         disp = disp * 255
         disp = np.clip(disp, 0, 255)
         disp = disp.astype(np.uint8)
         disp = cv2.cvtColor(disp, cv2.COLOR_GRAY2RGB)
 
+        #cv2.drawContours(disp, contours, -1, (0, 0, 255))
+        centers = []
+        for c in contours:
+            if cv2.contourArea(c) >= 10:
+                m = cv2.moments(c)
+                center = int(m['m10'] / m['m00']), int(m['m01'] / m['m00'])
+                centers.append(center)
+                cv2.circle(disp, center, 3, (0, 0, 255))
+
+        bestCenters = dict()
+        for center in centers:
+            if prevCenters:
+                bestDistance = ((center[0] - prevCenters[0][0])**2 + (center[1] - prevCenters[0][1])**2)**0.5
+                bestCenter = prevCenters[0]
+                for prevCenter in prevCenters:
+                    cv2.circle(disp, prevCenter, 3, (255, 0, 0))
+                    distance = ((center[0] - prevCenter[0])**2 + (center[1] - prevCenter[1])**2)**0.5
+                    if distance < bestDistance:
+                        bestDistance = distance
+                        bestCenter = prevCenter
+                bestCenters[center] = bestCenter
+        #for center in bestCenters:
+        #    cv2.line(disp, center, bestCenters[center], (0, 255, 255), 2)
+
+        prevBestCenters = dict()
+        for prevCenter in prevCenters:
+            bestDistance = ((centers[0][0] - prevCenter[0])**2 + (centers[0][1] - prevCenter[1])**2)**0.5
+            bestCenter = centers[0]
+            for center in centers:
+                distance = ((center[0] - prevCenter[0])**2 + (center[1] - prevCenter[1])**2)**0.5
+                if distance < bestDistance:
+                    bestDistance = distance
+                    bestCenter = center
+            prevBestCenters[prevCenter] = bestCenter
+        #for center in prevBestCenters:
+        #    cv2.line(disp, center, prevBestCenters[center], (255, 255, 0), 1)
+
+
+        matches = dict()
+        for center in bestCenters:
+            prevCenter = bestCenters[center]
+            if prevBestCenters[prevCenter] == center:
+                matches[center] = prevCenter
+
+        print matches
+        for center in matches:
+            cv2.line(disp, center, matches[center], (255, 0, 255))
+
         out.write(disp)
         cv2.imshow('frame', disp)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        if cv2.waitKey(0) & 0xFF == ord('q'):
             break
 
+        prevCenters = centers
         prevFrame = frame
         prevPrevPrevTrack = prevPrevTrack
         prevPrevTrack = prevTrack
