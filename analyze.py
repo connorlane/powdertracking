@@ -39,6 +39,35 @@ def scaleOneSided(img):
     img = img.astype(np.uint8)
     return img
 
+class trajectory:
+    def __init__(self, points = []):
+        self.points = points
+        self.counter = 0
+
+    def movement(self):
+        return ((self.points[-1][0] - self.points[-2][0])**2 + (self.points[-1][1] - self.points[-2][1])**2)**0.5
+
+    def getCost(self, c):
+        dX = (self.points[-1][0] - self.points[-2][0])
+        dY = (self.points[-1][1] - self.points[-2][1])
+        print dX
+        print dY
+
+        targetX = self.points[-1][0] + dX
+        targetY = self.points[-1][1] + dY
+        targetY_reflected = self.points[-1][1] - dY
+
+        cv2.circle(disp, self.points[-2], 4, (255, 0, 0))
+        cv2.circle(disp, self.points[-1], 4, (0, 255, 0))
+        cv2.circle(disp, (targetX, targetY), 4, (0, 0, 255))
+        cv2.circle(disp, (targetX, targetY_reflected), 4, (0, 0, 255))
+
+        cost = ((c[0] - targetX)**2 + (c[1] - targetY)**2)**0.5
+        cost_reflected = ((c[0] - targetX)**2 + (c[1] - targetY_reflected)**2)**0.5
+
+        return min(cost, cost_reflected)
+
+
 cap = cv2.VideoCapture('../Video/ti.mov') 
 ret, prevFrame = grabframe(cap)
 prevTracks = [np.zeros(prevFrame.shape[:2])] * 10
@@ -139,38 +168,95 @@ while cap.isOpened():
       
         bestTrajectories = dict()
         for c in centers:
-            if traj:
-                bestCost = getCost(traj[0], c)
-                bestTraj = traj[0]
+            if trajectories:
+                bestCost = trajectories[0].getCost(c)
+                bestTraj = trajectories[0]
                 for traj in trajectories[1:]:
-                    cost = getCost(traj, c)
+                    cost = traj.getCost(c)
                     if cost < bestCost:
                         bestTraj = traj
                         bestCost = cost
                 bestTrajectories[c] = bestTraj
 
-        bestCenters = dict()
         for traj in trajectories:
-            if c:
-                bestCost = getCost(traj, c[0])
-                bestCenter = c[0]
+            if centers:
+                bestCost = traj.getCost(centers[0])
+                bestCenter = centers[0]
                 for c in centers[1:]:
-                    cost = getCost(traj, c)
+                    cost = traj.getCost(c)
                     if cost < bestCost:
                         bestCenter = c
                         bestCost = cost
-                bestCenters[traj] = bestCenter
+                print "BEST COST: ", bestCost
+                mov = traj.movement()
+                print "MOVEMENT: ", mov
+                if bestTrajectories[bestCenter] == traj and mov and bestCost < 2 * mov + 5:
+                    cv2.putText(disp, str(bestCost), bestCenter, cv2.FONT_HERSHEY_PLAIN, 0.6, (0, 0, 0))
+                    traj.points.append(bestCenter)
+                    centers.remove(bestCenter)
+                else:
+                    traj.counter = traj.counter + 1
+                    if traj.counter > 4:
+                        trajectories.remove(traj)
 
-        for traj in bestCenters:
-            bestCenter = bestCenters[traj]
-            if bestTrajectories[bestCenter] == traj:
-                traj.append(bestCenter)
-                centers.remove(bestCenter)
 
         print "TRAJECTORIES"
         print trajectories
 
-        
+
+
+        bestCenters = dict()
+        for center in centers:
+            if prevCenters:
+                bestDistance = ((center[0] - prevCenters[0][0])**2 + (center[1] - prevCenters[0][1])**2)**0.5
+                bestCenter = prevCenters[0]
+                for prevCenter in prevCenters:
+                    cv2.circle(disp, prevCenter, 3, (255, 0, 0))
+                    distance = ((center[0] - prevCenter[0])**2 + (center[1] - prevCenter[1])**2)**0.5
+                    if distance < bestDistance:
+                        bestDistance = distance
+                        bestCenter = prevCenter
+                bestCenters[center] = bestCenter
+        #for center in bestCenters:
+        #    cv2.line(disp, center, bestCenters[center], (0, 255, 255), 2)
+
+        prevBestCenters = dict()
+        for prevCenter in prevCenters:
+            if centers:
+                bestDistance = ((centers[0][0] - prevCenter[0])**2 + (centers[0][1] - prevCenter[1])**2)**0.5
+                bestCenter = centers[0]
+                for center in centers:
+                    distance = ((center[0] - prevCenter[0])**2 + (center[1] - prevCenter[1])**2)**0.5
+                    if distance < bestDistance:
+                        bestDistance = distance
+                        bestCenter = center
+                prevBestCenters[prevCenter] = bestCenter
+        #for center in prevBestCenters:
+        #    cv2.line(disp, center, prevBestCenters[center], (255, 255, 0), 1)
+
+
+        matches = dict()
+        for center in bestCenters:
+            prevCenter = bestCenters[center]
+            if prevBestCenters[prevCenter] == center:
+                matches[center] = prevCenter
+
+        print "MATCHES"
+        print matches
+        for center in matches:
+            prevCenter = matches[center]
+            cv2.line(disp, center, matches[center], (255, 0, 255))
+            trajectories.append(trajectory([prevCenter, center]))
+            centers.remove(center)
+
+        print "MISFITS"
+        print centers
+
+        for traj in trajectories:
+            prevCenter = traj.points[0]
+            for center in traj.points[1:]:
+                cv2.line(disp, prevCenter, center, (255, 0, 255), 1)
+                prevCenter = center
 
         out.write(disp)
         cv2.imshow('frame', disp)
