@@ -86,8 +86,10 @@ if int(ver[0]) < 3 :
 else: 
     detector = cv2.SimpleBlobDetector_create(params)
 
-
+trajectories = []
+misfits = []
 prevCenters = []
+frameIndex = 0
 
 while cap.isOpened():
     ret, frame = grabframe(cap)
@@ -126,6 +128,7 @@ while cap.isOpened():
         disp = cv2.cvtColor(disp, cv2.COLOR_GRAY2RGB)
 
         #cv2.drawContours(disp, contours, -1, (0, 0, 255))
+        pointMap = dict()
         centers = []
         for c in contours:
             if cv2.contourArea(c) >= 10:
@@ -133,45 +136,41 @@ while cap.isOpened():
                 center = int(m['m10'] / m['m00']), int(m['m01'] / m['m00'])
                 centers.append(center)
                 cv2.circle(disp, center, 3, (0, 0, 255))
+      
+        bestTrajectories = dict()
+        for c in centers:
+            if traj:
+                bestCost = getCost(traj[0], c)
+                bestTraj = traj[0]
+                for traj in trajectories[1:]:
+                    cost = getCost(traj, c)
+                    if cost < bestCost:
+                        bestTraj = traj
+                        bestCost = cost
+                bestTrajectories[c] = bestTraj
 
         bestCenters = dict()
-        for center in centers:
-            if prevCenters:
-                bestDistance = ((center[0] - prevCenters[0][0])**2 + (center[1] - prevCenters[0][1])**2)**0.5
-                bestCenter = prevCenters[0]
-                for prevCenter in prevCenters:
-                    cv2.circle(disp, prevCenter, 3, (255, 0, 0))
-                    distance = ((center[0] - prevCenter[0])**2 + (center[1] - prevCenter[1])**2)**0.5
-                    if distance < bestDistance:
-                        bestDistance = distance
-                        bestCenter = prevCenter
-                bestCenters[center] = bestCenter
-        #for center in bestCenters:
-        #    cv2.line(disp, center, bestCenters[center], (0, 255, 255), 2)
+        for traj in trajectories:
+            if c:
+                bestCost = getCost(traj, c[0])
+                bestCenter = c[0]
+                for c in centers[1:]:
+                    cost = getCost(traj, c)
+                    if cost < bestCost:
+                        bestCenter = c
+                        bestCost = cost
+                bestCenters[traj] = bestCenter
 
-        prevBestCenters = dict()
-        for prevCenter in prevCenters:
-            bestDistance = ((centers[0][0] - prevCenter[0])**2 + (centers[0][1] - prevCenter[1])**2)**0.5
-            bestCenter = centers[0]
-            for center in centers:
-                distance = ((center[0] - prevCenter[0])**2 + (center[1] - prevCenter[1])**2)**0.5
-                if distance < bestDistance:
-                    bestDistance = distance
-                    bestCenter = center
-            prevBestCenters[prevCenter] = bestCenter
-        #for center in prevBestCenters:
-        #    cv2.line(disp, center, prevBestCenters[center], (255, 255, 0), 1)
+        for traj in bestCenters:
+            bestCenter = bestCenters[traj]
+            if bestTrajectories[bestCenter] == traj:
+                traj.append(bestCenter)
+                centers.remove(bestCenter)
 
+        print "TRAJECTORIES"
+        print trajectories
 
-        matches = dict()
-        for center in bestCenters:
-            prevCenter = bestCenters[center]
-            if prevBestCenters[prevCenter] == center:
-                matches[center] = prevCenter
-
-        print matches
-        for center in matches:
-            cv2.line(disp, center, matches[center], (255, 0, 255))
+        
 
         out.write(disp)
         cv2.imshow('frame', disp)
@@ -186,6 +185,8 @@ while cap.isOpened():
         
     else:
         break
+
+    frameIndex = frameIndex + 1
 
 out.release()
 cap.release()
