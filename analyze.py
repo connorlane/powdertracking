@@ -1,5 +1,8 @@
 #! /usr/bin/env python
 
+import scipy.stats
+import math
+
 try:
     import numpy as np
     import cv2
@@ -39,34 +42,59 @@ def scaleOneSided(img):
     img = img.astype(np.uint8)
     return img
 
+def euclideanDistance(p1, p2):
+    return ((p1[0] - p2[0])**2 + (p1[1] -p2[1])**2)**0.5
+
 class trajectory:
     def __init__(self, points = []):
         self.points = points
         self.counter = 0
 
+    def fitLine(self):
+        print "POINTS: ", self.points
+        slope, intercept, r, p, stderr = scipy.stats.linregress(self.points)
+        return slope, intercept
+
     def movement(self):
         return ((self.points[-1][0] - self.points[-2][0])**2 + (self.points[-1][1] - self.points[-2][1])**2)**0.5
 
-    def getCost(self, c):
-        dX = (self.points[-1][0] - self.points[-2][0])
-        dY = (self.points[-1][1] - self.points[-2][1])
-        print dX
-        print dY
+    def distance(self):
+        p1 = self.points[0]
+        distance = 0
+        for p2 in self.points[1:]:
+            distance = distance + euclideanDistance(p1, p2)
+        return distance
 
-        targetX = self.points[-1][0] + dX
-        targetY = self.points[-1][1] + dY
-        targetY_reflected = self.points[-1][1] - dY
+    def velocity(self):
+        return self.distance() / (len(self.points) - 1)
+
+    def getCost(self, c):
+        m, b = self.fitLine()
+        d = self.velocity()
+
+        if not math.isnan(m):
+            dX = math.sqrt(d*d / (1 + m*m))
+            dY = m * dX
+        else:
+            dX = 0
+            dY = d
+
+        print "D: ", d
+        print "M: ", m
+        print "B: ", b
+        print "DX: ", dX
+        print "DY: ", dY
+
+        targetX = int(round(self.points[-1][0] + dX))
+        targetY = int(round(self.points[-1][1] + dY))
 
         cv2.circle(disp, self.points[-2], 4, (255, 0, 0))
         cv2.circle(disp, self.points[-1], 4, (0, 255, 0))
         cv2.circle(disp, (targetX, targetY), 4, (0, 0, 255))
-        cv2.circle(disp, (targetX, targetY_reflected), 4, (0, 0, 255))
 
         cost = ((c[0] - targetX)**2 + (c[1] - targetY)**2)**0.5
-        cost_reflected = ((c[0] - targetX)**2 + (c[1] - targetY_reflected)**2)**0.5
 
-        return min(cost, cost_reflected)
-
+        return cost
 
 cap = cv2.VideoCapture('../Video/ti.mov') 
 ret, prevFrame = grabframe(cap)
@@ -255,7 +283,13 @@ while cap.isOpened():
         for traj in trajectories:
             prevCenter = traj.points[0]
             for center in traj.points[1:]:
-                cv2.line(disp, prevCenter, center, (255, 0, 255), 1)
+                slope, intercept = traj.fitLine()
+                if slope > 0:
+                    color = (255, 0, 255)
+                else:
+                    color = (255, 255, 0)
+                if len(traj.points) > 5:
+                    cv2.line(disp, prevCenter, center, color, 1)
                 prevCenter = center
 
         out.write(disp)
