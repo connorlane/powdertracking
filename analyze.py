@@ -45,13 +45,24 @@ def scaleOneSided(img):
 def euclideanDistance(p1, p2):
     return ((p1[0] - p2[0])**2 + (p1[1] -p2[1])**2)**0.5
 
+def projectPoint(m, b, point):
+    x = point[0]
+    y = point[1]
+    unit_vector = 1 / math.sqrt(m*m + 1), m / math.sqrt(m*m + 1)
+    print "UNIT_VECT: ", unit_vector
+    scalar_projection = (x + m * (y - b)) / math.sqrt(m*m + 1)
+    print "SCALAR_PROJ: ", scalar_projection
+    proj_x = int(round(scalar_projection * unit_vector[0]))
+    proj_y = int(round(scalar_projection * unit_vector[1] + b))
+    return proj_x, proj_y
+
 class trajectory:
     def __init__(self, points = []):
         self.points = points
         self.counter = 0
 
     def fitLine(self):
-        print "POINTS: ", self.points
+        print "POINTS: ", self.points[:-1]
         slope, intercept, r, p, stderr = scipy.stats.linregress(self.points)
         return slope, intercept
 
@@ -72,25 +83,27 @@ class trajectory:
         m, b = self.fitLine()
         d = self.velocity()
 
-        if not math.isnan(m):
-            dX = math.sqrt(d*d / (1 + m*m))
-            dY = m * dX
-        else:
-            dX = 0
-            dY = d
-
         print "D: ", d
         print "M: ", m
         print "B: ", b
-        print "DX: ", dX
-        print "DY: ", dY
 
-        targetX = int(round(self.points[-1][0] + dX))
-        targetY = int(round(self.points[-1][1] + dY))
+        dX = self.points[-1][0] - self.points[-2][0]
+        dY = self.points[-1][1] - self.points[-2][1]
 
-        cv2.circle(disp, self.points[-2], 4, (255, 0, 0))
-        cv2.circle(disp, self.points[-1], 4, (0, 255, 0))
-        cv2.circle(disp, (targetX, targetY), 4, (0, 0, 255))
+        if not math.isnan(m):
+            proj1 = projectPoint(m, b, self.points[1])
+            proj2 = projectPoint(m, b, self.points[-1])
+
+            dX = (proj1[0] - proj2[0]) / (len(self.points) - 1)
+            dY = (proj1[1] - proj2[1]) / (len(self.points) - 1)
+
+            #cv2.circle(disp, proj1, 4, (0, 255, 0))
+            #cv2.circle(disp, proj2, 4, (0, 0, 255))
+
+        targetX = int(round(self.points[-1][0] - dX * (self.counter + 1)))
+        targetY = int(round(self.points[-1][1] - dY * (self.counter + 1)))
+        
+        #cv2.circle(disp, (targetX, targetY), 4, (255, 0, 0))
 
         cost = ((c[0] - targetX)**2 + (c[1] - targetY)**2)**0.5
 
@@ -192,7 +205,7 @@ while cap.isOpened():
                 m = cv2.moments(c)
                 center = int(m['m10'] / m['m00']), int(m['m01'] / m['m00'])
                 centers.append(center)
-                cv2.circle(disp, center, 3, (0, 0, 255))
+                #cv2.circle(disp, center, 3, (0, 0, 255))
       
         bestTrajectories = dict()
         for c in centers:
@@ -218,19 +231,18 @@ while cap.isOpened():
                 print "BEST COST: ", bestCost
                 mov = traj.movement()
                 print "MOVEMENT: ", mov
-                if bestTrajectories[bestCenter] == traj and mov and bestCost < 2 * mov + 5:
+                if bestTrajectories[bestCenter] == traj and mov and bestCost < 4*mov:
                     cv2.putText(disp, str(bestCost), bestCenter, cv2.FONT_HERSHEY_PLAIN, 0.6, (0, 0, 0))
                     traj.points.append(bestCenter)
                     centers.remove(bestCenter)
                 else:
                     traj.counter = traj.counter + 1
-                    if traj.counter > 4:
+                    if traj.counter > 2:
                         trajectories.remove(traj)
 
 
         print "TRAJECTORIES"
         print trajectories
-
 
 
         bestCenters = dict()
@@ -239,7 +251,7 @@ while cap.isOpened():
                 bestDistance = ((center[0] - prevCenters[0][0])**2 + (center[1] - prevCenters[0][1])**2)**0.5
                 bestCenter = prevCenters[0]
                 for prevCenter in prevCenters:
-                    cv2.circle(disp, prevCenter, 3, (255, 0, 0))
+                    cv2.circle(disp, prevCenter, 2, (0, 0, 0))
                     distance = ((center[0] - prevCenter[0])**2 + (center[1] - prevCenter[1])**2)**0.5
                     if distance < bestDistance:
                         bestDistance = distance
@@ -311,3 +323,4 @@ while cap.isOpened():
 out.release()
 cap.release()
 cv2.destroyAllWindows()
+
