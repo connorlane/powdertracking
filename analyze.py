@@ -64,11 +64,13 @@ class trajectory:
 
     def splitLinear(self):
         newTrajectories = []
+        failedToFind = False
         originalSize = len(self.points)
-        while len(self.points) > originalSize * 0.1 and len(self.points) > 4:
+        while len(self.points) >= 2:
+            # Find a linear section
             bestNumInliers = 0
             bestInlierSet = []
-            for _ in range(1000):
+            for _ in xrange(1000):
                 p1, p2 = random.sample(self.points, 2)
                 if p1 == p2:
                     continue
@@ -76,8 +78,8 @@ class trajectory:
                 inlierSet = []
                 if p1[0] == p2[0]:
                     for p in self.points:
-                        d = p[0] - p1[0]
-                        if d < 4.0:
+                        d = math.fabs(p[0] - p1[0])
+                        if d < 3.5:
                             inlierSet.append(p)
 
                 else:
@@ -85,38 +87,54 @@ class trajectory:
                     b = p1[1] - m * p1[0]
                     for p in self.points:
                         d = math.fabs(m*p[0] - p[1] + b) / math.sqrt(m*m + 1)
-                        if d < 5.0:
+                        if d < 3.5:
                             inlierSet.append(p)
 
                 if len(inlierSet) > bestNumInliers:
                     bestNumInliers = len(inlierSet)
                     bestInlierSet = inlierSet
 
-            inlierSet = bestInlierSet
-            print "INLIER SET: ", inlierSet
+            print "BEST NUM INLIER: ", bestNumInliers
+
+            # Iteratively refine the linear section
             for _ in range(100):
+                if len(inlierSet) < 3:
+                    print "DONK"
+                    break
+
+                # Calculate a best-fit line based on the inlier set
                 m, b, r, p, e = scipy.stats.linregress([point[:2] for point in inlierSet])
                 inlierSet = []
+
                 for p in self.points:
+                    # Calculate distance to the linear regression
                     d = math.fabs(m*p[0] - p[1] + b) / math.sqrt(m*m + 1)
-                    if d < 4.0:
+
+                    # If inlier, add to the inlier set
+                    if d < 3.5:
                         inlierSet.append(p)
 
+            if bestNumInliers < len(inlierSet):
+                bestInlierSet = inlierSet
+                bestNumInliers = len(inlierSet)
+
             color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-            for p in inlierSet:
+            for p in bestInlierSet:
                 self.points.remove(p)
                 cv2.circle(disp, p[:2], 3, color)
+            print "NEW LENGTH: ", len(bestInlierSet)
 
-            newTrajectories.append(trajectory(inlierSet))
+            if bestNumInliers >= 3:
+                # Add the points as a new linear trajectory
+                newTrajectories.append(trajectory(bestInlierSet))
 
+        # Return the list of split linear trajectories
         return newTrajectories
 
     def averageVelocity(self):
         return distance / (len(self.points) - 1)
 
     def getCost(self, c):
-        dX = self.points
-
         dX = (self.points[-1][0] - self.points[-2][0])
         dY = (self.points[-1][1] - self.points[-2][1])
 
@@ -129,25 +147,25 @@ class trajectory:
 
         cost = ((c[0] - targetX)**2 + (c[1] - targetY)**2)**0.5
 
+        cv2.putText(disp, str(cost), self.points[-1][:2], cv2.FONT_HERSHEY_PLAIN, 0.86, (0, 0, 0))
+        #print "GETCOST COST: ", cost
+
         return cost
 
 
-cap = cv2.VideoCapture('../Video/ti.mov') 
+cap = cv2.VideoCapture('ti.mov') 
 ret, prevFrame = grabframe(cap)
 prevTracks = [np.zeros(prevFrame.shape[:2])] * 10
 prevTrack = np.zeros(prevFrame.shape[:2])
 prevPrevTrack = np.zeros(prevFrame.shape[:2])
 prevPrevPrevTrack = np.zeros(prevFrame.shape[:2])
 
-cv2.namedWindow('frame', cv2.WND_PROP_FULLSCREEN)
-cv2.setWindowProperty('frame', cv2.WND_PROP_FULLSCREEN, cv2.cv.CV_WINDOW_FULLSCREEN)
-
-print prevFrame.shape
+#cv2.namedWindow('frame', cv2.WND_PROP_FULLSCREEN)
+#cv2.setWindowProperty('frame', cv2.WND_PROP_FULLSCREEN, cv2.cv.CV_WINDOW_FULLSCREEN)
 
 size = (int(cap.get(cv2.cv.CV_CAP_PROP_FRAME_WIDTH)),
         int(cap.get(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT)))
 out = cv2.VideoWriter('video.avi', cv2.cv.FOURCC('X','V','I','D'), 20, size)
-
 
 # Setup SimpleBlobDetector parameters.
 params = cv2.SimpleBlobDetector_Params()
@@ -182,9 +200,15 @@ else:
 trajectories = []
 misfits = []
 prevCenters = []
+unmatchedSegments = []
+powderPoints = []
 frameIndex = 0
 
+#cap.set(cv2.cv.CV_CAP_PROP_POS_FRAMES, 0)
+
 while cap.isOpened():
+    print "FRAME: ",  frameIndex
+
     ret, frame = grabframe(cap)
 
     if ret == True:
@@ -233,6 +257,7 @@ while cap.isOpened():
         bestTrajectories = dict()
         for c in centers:
             if trajectories:
+                #print "NUMTRAJ: ", len(trajectories)
                 bestCost = trajectories[0].getCost(c)
                 bestTraj = trajectories[0]
                 for traj in trajectories[1:]:
@@ -244,48 +269,170 @@ while cap.isOpened():
 
         for traj in trajectories:
             if centers:
+                #print "NUMTRAJ: ", len(trajectories)
                 bestCost = traj.getCost(centers[0])
+                #print "TRAJCOST: ", bestCost
                 bestCenter = centers[0]
+                #print "CENTERS: ", centers
                 for c in centers[1:]:
                     cost = traj.getCost(c)
+                    #print "TRAJCOST: ", bestCost
                     if cost < bestCost:
                         bestCenter = c
                         bestCost = cost
-                print "BEST COST: ", bestCost
                 mov = traj.movement()
-                print "MOVEMENT: ", mov
-                cv2.putText(disp, str(bestCost), bestCenter[:2], cv2.FONT_HERSHEY_PLAIN, 0.86, (0, 0, 0))
-                if bestTrajectories[bestCenter] == traj and mov and bestCost < 1.5 * mov + 2:
+                #print "BESTCOST: ", bestCost
+                #print "MOVEMENT: ", mov
+                if bestTrajectories[bestCenter] == traj and mov and bestCost < 2.5 * mov + 5:
                     traj.points.append((bestCenter[0], bestCenter[1], frameIndex))
                     centers.remove(bestCenter)
                 else:
                     traj.counter = traj.counter + 1
-                    if traj.counter > 4:
+
+                    # Check if this trajectory is dying
+                    if traj.counter >= 2:
+
+                        # Split the trajectories into linear segments
                         splitTrajectories = traj.splitLinear()                     
-                        if splitTrajectories:
+
+                        # If we have two or more linear segments...
+                        if len(splitTrajectories) >= 2:
+
+                            # Test all possible combinations of linear segments
+                            # (This is fine since there will only be a handfull of segments)
                             for linearTraj1 in splitTrajectories:
                                 for linearTraj2 in splitTrajectories:
+                                    # Skip matching to self
                                     if linearTraj2 == linearTraj1:
                                         continue
+
+                                    # Get the start point of this trajectory
                                     start = linearTraj1.points[0]
+                                    # Get the end points of that trajectory
                                     end = linearTraj2.points[-1]
-                                    print "START: ", start
-                                    print "END: ", end
+
+                                    # Calculate time & physical distances
                                     timeDistance = start[2] - end[2]
-                                    print "TIME DIST: ", timeDistance
                                     physicalDistance = euclideanDistance(end[:2], start[:2])
-                                    print "PHYSICAL DIST: ", physicalDistance
-                                    if timeDistance > -1 and timeDistance < 3 and physicalDistance < 10:
-                                        print "FOUND!!"
-                                        cv2.circle(disp, start[:2], 7, (255, 0, 255))
+
+                                    # If matching in time and space...
+                                    print "TIMEDIST SAMETRAJ: ", timeDistance
+                                    print "SPACEDIST SAMETRAJ: ", physicalDistance
+                                    if timeDistance >= -1 and timeDistance <= 3 and physicalDistance < 35:
+                                        # Check for lined up trajectories
+                                        v1 = (linearTraj1.points[-1][0] - linearTraj1.points[0][0],
+                                              linearTraj1.points[-1][1] - linearTraj1.points[0][1])
+                                        v2 = (linearTraj2.points[-1][0] - linearTraj2.points[0][0],
+                                              linearTraj2.points[-1][1] - linearTraj2.points[0][1])
+                                        mag1 = math.sqrt(v1[0]**2 + v1[1]**2)
+                                        mag2 = math.sqrt(v2[0]**2 + v2[1]**2)
+
+                                        cosTheta = (v1[0] * v2[0] + v1[1] * v2[1]) / (mag1 * mag2)
+
+                                        if linearTraj1 in splitTrajectories:
+                                            splitTrajectories.remove(linearTraj1)
+
+                                        print "COSTHETA: ", cosTheta
+                                        if cosTheta > 0.9:
+                                            print "COMBINING SAMETRAJ"
+                                            # Combine the two segments
+                                            linearTraj2.points.extend(linearTraj1.points)
+                                        elif cosTheta < 0.8:
+                                            print "MATCH SAMERAJ"
+
+                                            #if cosTheta > -0.97:
+                                            m1, b1, r1, p1, e1 = scipy.stats.linregress([p[:2] for p in linearTraj1.points])
+                                            m2, b2, r2, p2, e2 = scipy.stats.linregress([p[:2] for p in linearTraj2.points])
+                                            x = (b1 - b2) / (m2 - m1)
+                                            y = m1 * x + b1
+
+                                            x = int(round(x))
+                                            y = int(round(y))
+                                            #else:
+                                            #    x = end[0]
+                                            #    y = end[1]
+
+                                            print "INT X: ", x
+                                            print "INT Y: ", y
+
+                                            powderPoints.append((x, y, (end[2] + start[2])/2))
+                                            cv2.circle(disp, (x, y), 10, (255, 0, 255))
+                                            splitTrajectories.remove(linearTraj2)
+
+                        for linearTraj1 in splitTrajectories:
+                            for linearTraj2 in unmatchedSegments:
+                                # Get the start point of this trajectory
+                                start = linearTraj1.points[0]
+                                # Get the end points of that trajectory
+                                end = linearTraj2.points[-1]
+
+                                # Calculate time & physical distances
+                                timeDistance = start[2] - end[2]
+                                physicalDistance = euclideanDistance(end[:2], start[:2])
+
+                                # If matching in time and space...
+                                print "TIMEDIST: ", timeDistance
+                                print "SPACEDIST: ", physicalDistance
+                                if timeDistance >= -1 and timeDistance <= 3 and physicalDistance < 35:
+                                    # Check for lined up trajectories
+                                    v1 = (linearTraj1.points[-1][0] - linearTraj1.points[0][0],
+                                          linearTraj1.points[-1][1] - linearTraj1.points[0][1])
+                                    v2 = (linearTraj2.points[-1][0] - linearTraj2.points[0][0],
+                                          linearTraj2.points[-1][1] - linearTraj2.points[0][1])
+                                    mag1 = math.sqrt(v1[0]**2 + v1[1]**2)
+                                    mag2 = math.sqrt(v2[0]**2 + v2[1]**2)
+                                    cosTheta = (v1[0] * v2[0] + v1[1] * v2[1]) / (mag1 * mag2)
+
+                                    if linearTraj1 in splitTrajectories:
+                                        splitTrajectories.remove(linearTraj1)
+
+                                    print "COSTHETA: ", cosTheta
+                                    if cosTheta > 0.9:
+                                        print "COMBINING"
+                                        # Combine the two segments
+                                        linearTraj2.points.extend(linearTraj1.points)
+                                    elif cosTheta < 0.8:
+                                        print "MATCH"
+                                            
+                                        #if cosTheta > -0.97:
+                                        m1, b1, r1, p1, e1 = scipy.stats.linregress([p[:2] for p in linearTraj1.points])
+                                        m2, b2, r2, p2, e2 = scipy.stats.linregress([p[:2] for p in linearTraj2.points])
+
+                                        print "M1: ", m1
+                                        print "M2: ", m2
+                                        print "B1: ", b1
+                                        print "B2: ", b2
+
+                                        x = (b2 - b1) / (m1 - m2)
+                                        y = m1 * x + b1
+
+                                        x = int(round(x))
+                                        y = int(round(y))
+                                        #else:
+                                        #    x = end[0]
+                                        #    y = end[1]
+
+                                        print "INT X: ", x
+                                        print "INT Y: ", y
+                                        #for p in linearTraj1.points:
+                                        #    cv2.circle(disp, p[:2], 5, (255, 0, 0))
+                                        #for p in linearTraj2.points:
+                                        #    cv2.circle(disp, p[:2], 5, (0, 0, 255))
+                                        #cv2.putText(disp, str(linearTraj1.points[0][2]), linearTraj1.points[0][:2], cv2.FONT_HERSHEY_PLAIN, 0.86, (0, 0, 0))
+                                        #cv2.putText(disp, str(linearTraj2.points[-1][2]), linearTraj2.points[-1][:2], cv2.FONT_HERSHEY_PLAIN, 0.86, (0, 0, 0))
+                                        cv2.circle(disp, (x, y), 10, (255, 0, 255))
+                                        powderPoints.append((x, y, (end[2] + start[2])/2))
+                                        unmatchedSegments.remove(linearTraj2)
+
+                        #for splitTraj in splitTrajectories:
+                        #    for p in splitTraj.points:
+                        #        cv2.circle(disp, p[:2], 3, (255, 255, 255))
+                        unmatchedSegments.extend(splitTrajectories)
+
+                        # Finally, kill the trajectory
                         trajectories.remove(traj)
 
-
-        print "TRAJECTORIES"
-        print trajectories
-
-
-        bestCenters = dict()
+        bestCenters =dict()
         for center in centers:
             if prevCenters:
                 bestDistance = ((center[0] - prevCenters[0][0])**2 + (center[1] - prevCenters[0][1])**2)**0.5
@@ -321,20 +468,15 @@ while cap.isOpened():
             if prevBestCenters[prevCenter] == center:
                 matches[center] = prevCenter
 
-        print "MATCHES"
-        print matches
         for center in matches:
             prevCenter = matches[center]
             #cv2.line(disp, center, matches[center], (255, 0, 255))
             trajectories.append(trajectory([prevCenter, center]))
             centers.remove(center)
 
-        print "MISFITS"
-        print centers
-
         for traj in trajectories:
-            if len(traj.points) < 5:
-                continue
+            #if len(traj.points) < 5:
+            #    continue
             prevCenter = traj.points[0][:2]
             for center in traj.points[1:]:
                 cv2.line(disp, prevCenter[:2], center[:2], (255, 0, 255), 1)
@@ -342,7 +484,7 @@ while cap.isOpened():
 
         out.write(disp)
         cv2.imshow('frame', disp)
-        if cv2.waitKey(0) & 0xFF == ord('q'):
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
         prevCenters = centers
@@ -356,6 +498,23 @@ while cap.isOpened():
 
     frameIndex = frameIndex + 1
 
+frameIndex = 0
+cap.set(cv2.cv.CV_CAP_PROP_POS_FRAMES, 0)
+while cap.isOpened():
+    ret, frame = grabframe(cap)
+
+    if ret == True:
+        for p in powderPoints:
+            if p[2] >= frameIndex - 3 and p[2] <= frameIndex + 3:
+                cv2.circle(frame, p[:2], 7, (0, 0, 255))
+        
+        cv2.imshow('frame', frame)
+        if cv2.waitKey(0) & 0xFF == ord('q'):
+            break
+
+    frameIndex = frameIndex + 1
+
 out.release()
 cap.release()
+
 cv2.destroyAllWindows()
