@@ -79,7 +79,7 @@ class trajectory:
                 if p1[0] == p2[0]:
                     for p in self.points:
                         d = math.fabs(p[0] - p1[0])
-                        if d < 3.5:
+                        if d < 2.5:
                             inlierSet.append(p)
 
                 else:
@@ -87,7 +87,7 @@ class trajectory:
                     b = p1[1] - m * p1[0]
                     for p in self.points:
                         d = math.fabs(m*p[0] - p[1] + b) / math.sqrt(m*m + 1)
-                        if d < 3.5:
+                        if d < 2.5:
                             inlierSet.append(p)
 
                 if len(inlierSet) > bestNumInliers:
@@ -111,7 +111,7 @@ class trajectory:
                     d = math.fabs(m*p[0] - p[1] + b) / math.sqrt(m*m + 1)
 
                     # If inlier, add to the inlier set
-                    if d < 3.5:
+                    if d < 2.5:
                         inlierSet.append(p)
 
             if bestNumInliers < len(inlierSet):
@@ -124,7 +124,7 @@ class trajectory:
                 cv2.circle(disp, p[:2], 3, color)
             print "NEW LENGTH: ", len(bestInlierSet)
 
-            if bestNumInliers >= 3:
+            if bestNumInliers >= 4:
                 # Add the points as a new linear trajectory
                 newTrajectories.append(trajectory(bestInlierSet))
 
@@ -153,7 +153,7 @@ class trajectory:
         return cost
 
 
-cap = cv2.VideoCapture('ti.mov') 
+cap = cv2.VideoCapture('./Ti_large_long_.75height.mov') 
 ret, prevFrame = grabframe(cap)
 prevTracks = [np.zeros(prevFrame.shape[:2])] * 10
 prevTrack = np.zeros(prevFrame.shape[:2])
@@ -165,7 +165,7 @@ prevPrevPrevTrack = np.zeros(prevFrame.shape[:2])
 
 size = (int(cap.get(cv2.cv.CV_CAP_PROP_FRAME_WIDTH)),
         int(cap.get(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT)))
-out = cv2.VideoWriter('video.avi', cv2.cv.FOURCC('X','V','I','D'), 20, size)
+out = cv2.VideoWriter('video.avi', cv2.cv.FOURCC('X','V','I','D'), 60, size)
 
 # Setup SimpleBlobDetector parameters.
 params = cv2.SimpleBlobDetector_Params()
@@ -224,7 +224,7 @@ while cap.isOpened():
 
         diff = scaleOneSided(Gmag)
 
-        ret, track = cv2.threshold(diff, 100, 256, cv2.THRESH_BINARY)
+        ret, track = cv2.threshold(diff, 128, 256, cv2.THRESH_BINARY)
         kernel = np.ones((3,3), np.uint8)
         kernelOpen = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=np.uint8)
         track = cv2.morphologyEx(track, cv2.MORPH_CLOSE, kernel)
@@ -283,7 +283,7 @@ while cap.isOpened():
                 mov = traj.movement()
                 #print "BESTCOST: ", bestCost
                 #print "MOVEMENT: ", mov
-                if bestTrajectories[bestCenter] == traj and mov and bestCost < 2.5 * mov + 5:
+                if bestTrajectories[bestCenter] == traj and mov and bestCost < 2 * mov + 3:
                     traj.points.append((bestCenter[0], bestCenter[1], frameIndex))
                     centers.remove(bestCenter)
                 else:
@@ -318,7 +318,7 @@ while cap.isOpened():
                                     # If matching in time and space...
                                     print "TIMEDIST SAMETRAJ: ", timeDistance
                                     print "SPACEDIST SAMETRAJ: ", physicalDistance
-                                    if timeDistance >= -1 and timeDistance <= 3 and physicalDistance < 35:
+                                    if timeDistance >= -1 and timeDistance <= 3 and physicalDistance < 55:
                                         # Check for lined up trajectories
                                         v1 = (linearTraj1.points[-1][0] - linearTraj1.points[0][0],
                                               linearTraj1.points[-1][1] - linearTraj1.points[0][1])
@@ -340,17 +340,22 @@ while cap.isOpened():
                                         elif cosTheta < 0.8:
                                             print "MATCH SAMERAJ"
 
-                                            #if cosTheta > -0.97:
-                                            m1, b1, r1, p1, e1 = scipy.stats.linregress([p[:2] for p in linearTraj1.points])
-                                            m2, b2, r2, p2, e2 = scipy.stats.linregress([p[:2] for p in linearTraj2.points])
-                                            x = (b1 - b2) / (m2 - m1)
-                                            y = m1 * x + b1
+                                            if cosTheta > -0.99:
+                                                m1, b1, r1, p1, e1 = scipy.stats.linregress([p[:2] for p in linearTraj1.points])
+                                                m2, b2, r2, p2, e2 = scipy.stats.linregress([p[:2] for p in linearTraj2.points])
 
-                                            x = int(round(x))
-                                            y = int(round(y))
-                                            #else:
-                                            #    x = end[0]
-                                            #    y = end[1]
+                                                if math.isnan(m1) or math.isnan(m2):
+                                                    x = end[0]
+                                                    y = end[1]
+                                                else:
+                                                    x = (b1 - b2) / (m2 - m1)
+                                                    y = m1 * x + b1
+
+                                                x = int(round(x))
+                                                y = int(round(y))
+                                            else:
+                                                x = end[0]
+                                                y = end[1]
 
                                             print "INT X: ", x
                                             print "INT Y: ", y
@@ -373,7 +378,7 @@ while cap.isOpened():
                                 # If matching in time and space...
                                 print "TIMEDIST: ", timeDistance
                                 print "SPACEDIST: ", physicalDistance
-                                if timeDistance >= -1 and timeDistance <= 3 and physicalDistance < 35:
+                                if timeDistance >= -1 and timeDistance <= 3 and physicalDistance < 55:
                                     # Check for lined up trajectories
                                     v1 = (linearTraj1.points[-1][0] - linearTraj1.points[0][0],
                                           linearTraj1.points[-1][1] - linearTraj1.points[0][1])
@@ -381,7 +386,10 @@ while cap.isOpened():
                                           linearTraj2.points[-1][1] - linearTraj2.points[0][1])
                                     mag1 = math.sqrt(v1[0]**2 + v1[1]**2)
                                     mag2 = math.sqrt(v2[0]**2 + v2[1]**2)
-                                    cosTheta = (v1[0] * v2[0] + v1[1] * v2[1]) / (mag1 * mag2)
+                                    if mag1 == 0 or mag2 == 0:
+                                        cosTheta = 1
+                                    else:
+                                        cosTheta = (v1[0] * v2[0] + v1[1] * v2[1]) / (mag1 * mag2)
 
                                     if linearTraj1 in splitTrajectories:
                                         splitTrajectories.remove(linearTraj1)
@@ -394,23 +402,27 @@ while cap.isOpened():
                                     elif cosTheta < 0.8:
                                         print "MATCH"
                                             
-                                        #if cosTheta > -0.97:
-                                        m1, b1, r1, p1, e1 = scipy.stats.linregress([p[:2] for p in linearTraj1.points])
-                                        m2, b2, r2, p2, e2 = scipy.stats.linregress([p[:2] for p in linearTraj2.points])
+                                        if cosTheta > -0.99:
+                                            m1, b1, r1, p1, e1 = scipy.stats.linregress([p[:2] for p in linearTraj1.points])
+                                            m2, b2, r2, p2, e2 = scipy.stats.linregress([p[:2] for p in linearTraj2.points])
+                                            
+                                            print "M1: ", m1
+                                            print "M2: ", m2
+                                            print "B1: ", b1
+                                            print "B2: ", b2
+                                            
+                                            if math.isnan(m1) or math.isnan(m2):
+                                                x = end[0]
+                                                y = end[1]
+                                            else:
+                                                x = (b2 - b1) / (m1 - m2)
+                                                y = m1 * x + b1
 
-                                        print "M1: ", m1
-                                        print "M2: ", m2
-                                        print "B1: ", b1
-                                        print "B2: ", b2
-
-                                        x = (b2 - b1) / (m1 - m2)
-                                        y = m1 * x + b1
-
-                                        x = int(round(x))
-                                        y = int(round(y))
-                                        #else:
-                                        #    x = end[0]
-                                        #    y = end[1]
+                                            x = int(round(x))
+                                            y = int(round(y))
+                                        else:
+                                            x = end[0]
+                                            y = end[1]
 
                                         print "INT X: ", x
                                         print "INT Y: ", y
@@ -482,7 +494,6 @@ while cap.isOpened():
                 cv2.line(disp, prevCenter[:2], center[:2], (255, 0, 255), 1)
                 prevCenter = center
 
-        out.write(disp)
         cv2.imshow('frame', disp)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
@@ -501,16 +512,21 @@ while cap.isOpened():
 frameIndex = 0
 cap.set(cv2.cv.CV_CAP_PROP_POS_FRAMES, 0)
 while cap.isOpened():
-    ret, frame = grabframe(cap)
+    print "FRAME: ", frameIndex
+    ret, frame = cap.read()
 
     if ret == True:
         for p in powderPoints:
-            if p[2] >= frameIndex - 3 and p[2] <= frameIndex + 3:
+            if p[2] >= frameIndex - 5 and p[2] <= frameIndex + 5:
                 cv2.circle(frame, p[:2], 7, (0, 0, 255))
         
         cv2.imshow('frame', frame)
-        if cv2.waitKey(0) & 0xFF == ord('q'):
+        out.write(frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
+
+    else:
+        break
 
     frameIndex = frameIndex + 1
 
