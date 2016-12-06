@@ -1,15 +1,13 @@
 #! /usr/bin/env python
 
+import sys
+import matplotlib.pyplot as plt
 import math
 import random
 import scipy.stats
 
-try:
-    import numpy as np
-    import cv2
-except:
-    print "Error importing dependencies"
-    exit(-1)
+import numpy as np
+import cv2
 
 def normalize(img):
     mean, stddev = cv2.meanStdDev(img)
@@ -28,7 +26,7 @@ def grabframe(cap):
 
     return ret, frame
 
-def scale(img): 
+def scale(img):
     mean, stddev = cv2.meanStdDev(img)
     img = img + stddev * 12
     img = 255 * img / (20 * stddev)
@@ -246,15 +244,13 @@ def matchEnds(startTrajectories, endTrajectories):
                 v2 = (linearTraj2.points[-1][0] - linearTraj2.points[0][0],
                       linearTraj2.points[-1][1] - linearTraj2.points[0][1])
 
-                print "LINEARTRAJ1: ", linearTraj1.points
-                print "LINEARTRAJ2: ", linearTraj2.points
-                print "LEN(LINEARTRAJ1): ", len(linearTraj1.points)
-                print "LEN(LINEARTRAJ2): ", len(linearTraj2.points)
-                print "V1: ", v1
-                print "V2: ", v2
                 mag1 = math.sqrt(v1[0]**2 + v1[1]**2)
                 mag2 = math.sqrt(v2[0]**2 + v2[1]**2)
 
+                # If we're looking at a degenerate trajectory
+                if mag1 == 0 or mag2 == 0:
+                    continue
+                    
                 cosTheta = (v1[0] * v2[0] + v1[1] * v2[1]) / (mag1 * mag2)
 
                 if linearTraj1 in startTrajectories:
@@ -358,7 +354,40 @@ def findNewTrajectories(centers, prevCenters):
 
     return newTrajectories
 
-cap = cv2.VideoCapture('./Ti_large_long_.75height.mov') 
+_selectedPoints = []
+_currentImage = None
+
+# Callback for getting the mouse click locations
+def getClick(event, x, y, flags, param):
+	global _selectedPoints
+        global _currentImage
+ 
+        if event == cv2.EVENT_LBUTTONDOWN: 
+                _selectedPoints.append((float(x), float(y)))
+                cv2.circle(_currentImage, (x, y), 5, (0, 255, 0))
+                cv2.imshow("image", _currentImage)
+
+# Gets mouse click locations on the specified image (press 'q') to finish
+def getPoints(image):
+    global _selectedPoints
+    global _currentImage
+
+    _selectedPoints = []
+    _currentImage = image
+
+    cv2.namedWindow("image")
+    cv2.setMouseCallback("image", getClick)
+
+    while True:
+            cv2.imshow("image", image)
+            key = cv2.waitKey(1) & 0xFF
+     
+            if key == ord("q"):
+                break;
+
+    return _selectedPoints
+
+cap = cv2.VideoCapture(sys.argv[1]) 
 ret, prevFrame = grabframe(cap)
 prevTracks = [np.zeros(prevFrame.shape[:2])] * 10
 prevTrack = np.zeros(prevFrame.shape[:2])
@@ -375,7 +404,29 @@ g_prevCenters = []
 g_unmatchedSegments = []
 g_powderPoints = []
 g_frameIndex = 0
-disp = np.array([])
+
+ret, frame = grabframe(cap)
+
+sourcePoints = getPoints(frame)
+
+INVALID_COORDS_MESSAGE = "Invalid Coordinates. Input as x, y"
+destinationPoints = []
+print "You selected", len(sourcePoints), "points. Please enter the corresponding physical coordinates: "
+for p in sourcePoints:
+    coords = []
+    while len(coords) != 2:
+        try:
+            coords = input(str(p) + ": ")
+            if len(coords) != 2:
+                print INVALID_COORDS_MESSAGE
+            else:
+                destinationPoints.append(coords)
+        except NameError:
+            print INVALID_COORDS_MESSAGE
+
+H, mask = cv2.findHomography(np.asarray(sourcePoints), np.asarray(destinationPoints))
+
+print "Here's the calculated homography matrix:", H
 
 while cap.isOpened():
     print "FRAME: ",  g_frameIndex
@@ -383,6 +434,7 @@ while cap.isOpened():
     ret, frame = grabframe(cap)
 
     if ret == True:
+        # Copy the frame so we can build a separate video for monitoring & debugging
         disp = frame.copy()
 
         # Subtract the background
@@ -390,9 +442,6 @@ while cap.isOpened():
 
         # Find the powder location centers
         centers = getCenters(dFrame, g_frameIndex)
-
-        #for c in centers:
-        #    cv2.circle(disp, c[:2], 10, (255, 255, 255))
 
         # Match the centers with the existing trajectories
         matchCenters(centers, g_trajectories, g_frameIndex) 
@@ -403,7 +452,6 @@ while cap.isOpened():
 
         # Find powder collision points and prune trajectories list
         newPowderPoints = extractCollisionsAndPrune(g_trajectories, g_unmatchedSegments)
-        #print "NEW POWDER POINTS: ", newPowderPoints
         g_powderPoints.extend(newPowderPoints)
 
         # Draw the trajectories (for monitoring & debugging)
@@ -448,3 +496,24 @@ out.release()
 cap.release()
 
 cv2.destroyAllWindows()
+
+# Warp the coordinates
+powderPoints_warped = []
+for p in g_powderPoints:
+    p_warped = np.dot(H, [ [p[0]], [p[1]], [1] ])
+    p_warped = p_warped / p_warped[2]
+    powderPoints_warped.append((p_warped[0][0], p_warped[1][0]))
+
+centroid = np.sum(powderPoints_warped, axis=0) / float(len(powderPoints_warped))
+
+f = open('points.csv', 'w')
+
+for p in powderPoints_warped:
+    x = p[0] - centroid[0]
+    y = p[1] - centroid[1]
+    f.write(str(x) + ', ' + str(y) + '\n')
+    plt.scatter(x, y)
+
+f.close()
+
+plt.show()
