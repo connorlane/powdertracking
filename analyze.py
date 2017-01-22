@@ -1,7 +1,6 @@
 #! /usr/bin/env python
 
 import sys
-import matplotlib.pyplot as plt
 import math
 import random
 import scipy.stats
@@ -21,7 +20,7 @@ def grabframe(cap):
     if ret == True:
         frame = cv2.cvtColor(frameRaw, cv2.COLOR_BGR2GRAY)
         frame = frame.astype(np.float32) / 255
-    #frame = cv2.GaussianBlur(frame, (5, 5), 0)
+        #frame = cv2.GaussianBlur(frame, (5, 5), 0)
         frame = cv2.bilateralFilter(frame, 3, 25, 25)
 
     return ret, frame
@@ -36,13 +35,14 @@ def scale(img):
 
 def scaleOneSided(img):
     mean, stddev = cv2.meanStdDev(img)
-    img = 255 * img / (stddev * 14)
+    img = 255 * (img - mean) / (stddev * 15)
     img = np.clip(img, 0, 255)
     img = img.astype(np.uint8)
     return img
 
 def euclideanDistance(p1, p2):
-    return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
+    return np.linalg.norm(np.subtract(p1, p2))
+    #return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
 
 class trajectory:
     def __init__(self, points = []):
@@ -147,23 +147,25 @@ class trajectory:
 
         return cost
 
-def getCenters(diff, frameIndex):
-    Gx = cv2.Sobel(diff, -1, 1, 0)
-    Gy = cv2.Sobel(diff, -1, 0, 1)
+def getCenters(diff):
+    #Gx = cv2.Sobel(diff, -1, 1, 0)
+    #Gy = cv2.Sobel(diff, -1, 0, 1)
 
-    Gx2 = np.square(Gx)
-    Gy2 = np.square(Gy)
+    #Gx2 = np.square(Gx)
+    #Gy2 = np.square(Gy)
 
-    Gmag = np.sqrt(Gx2 + Gy2)
+    #Gmag = np.sqrt(Gx2 + Gy2)
 
-    diff = scaleOneSided(Gmag)
+    diff = scaleOneSided(diff)
 
     ret, track = cv2.threshold(diff, 128, 256, cv2.THRESH_BINARY)
     kernel = np.ones((3,3), np.uint8)
     kernelOpen = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=np.uint8)
-    track = cv2.morphologyEx(track, cv2.MORPH_CLOSE, kernel)
-    track = cv2.morphologyEx(track, cv2.MORPH_OPEN, kernel)
+    track = cv2.morphologyEx(track, cv2.MORPH_CLOSE, kernelOpen)
+    track = cv2.morphologyEx(track, cv2.MORPH_OPEN, kernelOpen)
     diff = np.maximum(diff, track)
+
+    cv2.imshow('blobs', track)
 
     contours, heirarchy = cv2.findContours(track, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -172,7 +174,7 @@ def getCenters(diff, frameIndex):
         if cv2.contourArea(c) >= 10:
             m = cv2.moments(c)
             center = int(m['m10'] / m['m00']), int(m['m01'] / m['m00'])
-            centers.append((center[0], center[1], frameIndex))
+            centers.append((center[0], center[1]))
             #print "APPENDING: ", center
             #cv2.circle(track, center, 5, (255, 255, 255))
 
@@ -387,16 +389,27 @@ def getPoints(image):
 
     return _selectedPoints
 
+def findClosest(x, points):
+    closestPoint = points[0]
+    closestDistance = euclideanDistance(points[0], x)
+    for p in points[1:]:
+        distance = euclideanDistance(p, x)
+        if distance < closestDistance:
+            closestDistance = distance
+            closestPoint = p
+    return closestPoint, closestDistance
+
 cap = cv2.VideoCapture(sys.argv[1]) 
 ret, prevFrame = grabframe(cap)
+shape = prevFrame.shape[:2]
 prevTracks = [np.zeros(prevFrame.shape[:2])] * 10
 prevTrack = np.zeros(prevFrame.shape[:2])
 prevPrevTrack = np.zeros(prevFrame.shape[:2])
 prevPrevPrevTrack = np.zeros(prevFrame.shape[:2])
 
+numFrames = int(cap.get(cv2.cv.CV_CAP_PROP_FRAME_COUNT))
 size = (int(cap.get(cv2.cv.CV_CAP_PROP_FRAME_WIDTH)),
         int(cap.get(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT)))
-out = cv2.VideoWriter('video.avi', cv2.cv.FOURCC('X','V','I','D'), 60, size)
 
 g_trajectories = []
 g_misfits = []
@@ -404,116 +417,175 @@ g_prevCenters = []
 g_unmatchedSegments = []
 g_powderPoints = []
 g_frameIndex = 0
+g_centers = dict()
 
-ret, frame = grabframe(cap)
+pixels = np.empty((shape[0], shape[1], 100))
 
-sourcePoints = getPoints(frame)
-
-INVALID_COORDS_MESSAGE = "Invalid Coordinates. Input as x, y"
-destinationPoints = []
-print "You selected", len(sourcePoints), "points. Please enter the corresponding physical coordinates: "
-for p in sourcePoints:
-    coords = []
-    while len(coords) != 2:
-        try:
-            coords = input(str(p) + ": ")
-            if len(coords) != 2:
-                print INVALID_COORDS_MESSAGE
-            else:
-                destinationPoints.append(coords)
-        except NameError:
-            print INVALID_COORDS_MESSAGE
-
-H, mask = cv2.findHomography(np.asarray(sourcePoints), np.asarray(destinationPoints))
-
-print "Here's the calculated homography matrix:", H
-
-while cap.isOpened():
+while cap.isOpened() and g_frameIndex < 100:
     print "FRAME: ",  g_frameIndex
 
     ret, frame = grabframe(cap)
 
     if ret == True:
-        # Copy the frame so we can build a separate video for monitoring & debugging
-        disp = frame.copy()
-
-        # Subtract the background
-        dFrame = np.subtract(frame, prevFrame)
-
-        # Find the powder location centers
-        centers = getCenters(dFrame, g_frameIndex)
-
-        # Match the centers with the existing trajectories
-        matchCenters(centers, g_trajectories, g_frameIndex) 
-
-        # With the remaining centers, find any new trajectories
-        newTrajectories = findNewTrajectories(centers, g_prevCenters)
-        g_trajectories.extend(newTrajectories)
-
-        # Find powder collision points and prune trajectories list
-        newPowderPoints = extractCollisionsAndPrune(g_trajectories, g_unmatchedSegments)
-        g_powderPoints.extend(newPowderPoints)
-
-        # Draw the trajectories (for monitoring & debugging)
-        [traj.draw(disp) for traj in g_trajectories]
-
-        # Show the frame with drawn trajectories
-        cv2.imshow('frame', disp)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-        # Record the previous centers and past frame
-        g_prevCenters = centers
-        prevFrame = frame
+        pixels[:,:,g_frameIndex] = frame
     else:
         break
 
     # Keep track of a frame index
     g_frameIndex = g_frameIndex + 1
 
-g_frameIndex = 0
+medainImage = np.median(pixels, axis=2)
+cv2.imshow('median', medainImage)
+
+# Go back to first frame
 cap.set(cv2.cv.CV_CAP_PROP_POS_FRAMES, 0)
+
+g_frameIndex = 0
 while cap.isOpened():
-    print "FRAME: ", g_frameIndex
-    ret, frame = cap.read()
+    print "FRAME: ",  g_frameIndex
+
+    ret, frame = grabframe(cap)
 
     if ret == True:
-        for p in g_powderPoints:
-            if p[2] >= g_frameIndex - 5 and p[2] <= g_frameIndex + 5:
-                cv2.circle(frame, p[:2], 7, (0, 0, 255))
-        
-        cv2.imshow('frame', frame)
-        out.write(frame)
+        diff = np.subtract(frame, medainImage)
+
+        scaled = scaleOneSided(diff)
+
+        centers = getCenters(scaled)
+
+        if centers:
+            g_centers[g_frameIndex] = centers
+
+        cv2.imshow('scaled', scaled)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
-
     else:
         break
 
+    # Keep track of a frame index
     g_frameIndex = g_frameIndex + 1
 
-out.release()
+segments = []
+
+for i in xrange(1, 10000):
+    t1 = random.choice(g_centers.keys())
+    t2 = t1 + 1
+    while not t2 in g_centers.keys() and t2 <= numFrames:
+        t2 = t2 + 1
+
+    if t2 >= numFrames:
+        continue
+
+    p1 = random.choice(g_centers[t1])
+    p2, _ = findClosest(p1, g_centers[t2])
+
+    dT = t2 - t1
+    dX = p2[0] - p1[0]
+    dY = p2[1] - p1[1]
+
+    mX = dX / dT
+    mY = dY / dT
+    bX = p1[0] - mX*t1
+    bY = p1[1] - mY*t1
+
+    for _ in xrange(1, 10):
+        debugImage = np.zeros((shape[0], shape[1], 3), dtype=np.uint8)
+        inlierCount = 0
+        inliers = []
+        t = t2 + 1
+        x = bX + t * mX 
+        y = bY + t * mY 
+
+        skipCounter = 0
+        while x > 0 and x < shape[1] and y > 0 and y < shape[0] and t < numFrames and skipCounter < 10:
+            if t in g_centers.keys():
+                cv2.circle(debugImage, (int(x), int(y)), 4, (255, 0, 0))
+                closest, distance = findClosest((x, y), g_centers[t])
+                if distance < 5:
+                    inliers.append((t, closest[0], closest[1]))
+                    inlierCount = inlierCount + 1
+                    skipCounter = 0
+                    cv2.circle(debugImage, closest, 4, (0, 255, 0))
+                else:
+                    skipCounter = skipCounter + 1
+                    cv2.circle(debugImage, closest, 4, (0, 0, 255))
+            t = t + 1
+            x = bX + t * mX 
+            y = bY + t * mY 
+
+        t = t1 - 1
+        x = bX + t * mX 
+        y = bY + t * mY 
+
+        skipCounter = 0
+        while x > 0 and x < shape[1] and y > 0 and y < shape[0] and t > 0 and skipCounter < 10:
+            if t in g_centers.keys():
+                cv2.circle(debugImage, (int(x), int(y)), 4, (255, 0, 0))
+                closest, distance = findClosest((x, y), g_centers[t])
+                if distance < 5:
+                    inliers.append((t, closest[0], closest[1]))
+                    inlierCount = inlierCount + 1
+                    skipCounter = 0
+                    cv2.circle(debugImage, closest, 4, (0, 255, 0))
+                else:
+                    skipCounter = skipCounter + 1 
+                    cv2.circle(debugImage, closest, 4, (0, 0, 255))
+
+            t = t - 1
+            x = bX + t * mX 
+            y = bY + t * mY 
+
+        if not inliers:
+            break
+
+        mX, bX, rX, pX, eX = scipy.stats.linregress([(inlier[0], inlier[1]) for inlier in inliers])
+        mY, bY, rY, pY, eY = scipy.stats.linregress([(inlier[0], inlier[2]) for inlier in inliers])
+
+    if len(inliers) > 4:
+        tMin = np.amin(inliers, axis=0)[0]
+        tMax = np.amax(inliers, axis=0)[0]
+        segments.append((mX, bX, mY, bY, tMin, tMax))
+        print "Segment Found!"
+        for t, x, y in inliers:
+            if g_centers[t]:
+                g_centers[t].remove((x,y))
+                if not g_centers[t]:
+                    del g_centers[t]
+
+    cv2.imshow('debug', debugImage)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# Go back to first frame
+cap.set(cv2.cv.CV_CAP_PROP_POS_FRAMES, 0)
+
+g_frameIndex = 0
+while cap.isOpened():
+    print "FRAME: ",  g_frameIndex
+
+    ret, frame = grabframe(cap)
+
+    if ret == True:
+        for segment in segments:
+            if (g_frameIndex > segment[4]) and (g_frameIndex < segment[5]):
+                print "SEGMENT:",segment
+                t1 = segment[4]
+                x1 = int(segment[0] * segment[4] + segment[1])
+                y1 = int(segment[2] * segment[4] + segment[3])
+                x2 = int(segment[0] * g_frameIndex + segment[1])
+                y2 = int(segment[2] * g_frameIndex + segment[3])
+                cv2.line(frame, (x1, y1), (x2, y2), (255, 0, 255), 2)
+
+        cv2.imshow('segments', frame)
+        if cv2.waitKey(0) & 0xFF == ord('q'):
+            break
+    else:
+        break
+
+    # Keep track of a frame index
+    g_frameIndex = g_frameIndex + 1
+
 cap.release()
 
 cv2.destroyAllWindows()
 
-# Warp the coordinates
-powderPoints_warped = []
-for p in g_powderPoints:
-    p_warped = np.dot(H, [ [p[0]], [p[1]], [1] ])
-    p_warped = p_warped / p_warped[2]
-    powderPoints_warped.append((p_warped[0][0], p_warped[1][0]))
-
-centroid = np.sum(powderPoints_warped, axis=0) / float(len(powderPoints_warped))
-
-f = open('points.csv', 'w')
-
-for p in powderPoints_warped:
-    x = p[0] - centroid[0]
-    y = p[1] - centroid[1]
-    f.write(str(x) + ', ' + str(y) + '\n')
-    plt.scatter(x, y)
-
-f.close()
-
-plt.show()
