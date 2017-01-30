@@ -4,14 +4,14 @@ import sys
 import math
 import random
 import scipy.stats
+import copy
 
 import numpy as np
 import cv2
 
 def normalize(img):
-    mean, stddev = cv2.meanStdDev(img)
-    return (img - mean) / stddev
-
+    mean, stddev = cv2.meanStdDev(img) 
+    return (img - mean) / stddev 
 def grabframe(cap):
     ret, frameRaw = cap.read()
 
@@ -41,8 +41,8 @@ def scaleOneSided(img):
     return img
 
 def euclideanDistance(p1, p2):
-    return np.linalg.norm(np.subtract(p1, p2))
-    #return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
+    #return np.linalg.norm(np.subtract(p1, p2))
+    return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
 
 class trajectory:
     def __init__(self, points = []):
@@ -156,7 +156,7 @@ def getCenters(diff):
 
     #Gmag = np.sqrt(Gx2 + Gy2)
 
-    diff = scaleOneSided(diff)
+    #diff = scaleOneSided(diff)
 
     ret, track = cv2.threshold(diff, 128, 256, cv2.THRESH_BINARY)
     kernel = np.ones((3,3), np.uint8)
@@ -167,11 +167,11 @@ def getCenters(diff):
 
     cv2.imshow('blobs', track)
 
-    contours, heirarchy = cv2.findContours(track, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    _, contours, _ = cv2.findContours(track, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     centers = []
     for c in contours:
-        if cv2.contourArea(c) >= 10:
+        if cv2.contourArea(c) >= 1:
             m = cv2.moments(c)
             center = int(m['m10'] / m['m00']), int(m['m01'] / m['m00'])
             centers.append((center[0], center[1]))
@@ -399,6 +399,62 @@ def findClosest(x, points):
             closestPoint = p
     return closestPoint, closestDistance
 
+def getMedianImage(cap, maxNumFrames):
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    pixels = np.empty((height, width, 100))
+
+    g_frameIndex = 0
+    while cap.isOpened() and g_frameIndex < maxNumFrames:
+        ret, frame = grabframe(cap)
+
+        if ret == True:
+            pixels[:,:,g_frameIndex] = frame
+        else:
+            break
+
+        # Keep track of a frame index
+        g_frameIndex = g_frameIndex + 1
+
+    medianImage = np.median(pixels, axis=2)
+    return medianImage
+
+def getParticlePoints(cap, medianImage):
+    particlePoints = dict()
+
+    # Go back to first frame
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+ 
+    g_frameIndex = 0
+    while cap.isOpened():
+        print "FRAME: ",  g_frameIndex
+ 
+        ret, frame = grabframe(cap)
+ 
+        if ret == True:
+            diff = np.subtract(frame, medianImage)
+ 
+            scaled = scaleOneSided(diff)
+ 
+            centers = getCenters(scaled)
+
+            #particlePoints.append(centers)
+            
+            if centers:
+                particlePoints[g_frameIndex] = centers
+                #particlePoints.extend([(g_frameIndex, center[0], center[1]) for center in centers])
+ 
+            cv2.imshow('scaled', scaled)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+        else:
+            break
+ 
+        # Keep track of a frame index
+        g_frameIndex = g_frameIndex + 1
+
+    return particlePoints
+
 cap = cv2.VideoCapture(sys.argv[1]) 
 ret, prevFrame = grabframe(cap)
 shape = prevFrame.shape[:2]
@@ -407,9 +463,9 @@ prevTrack = np.zeros(prevFrame.shape[:2])
 prevPrevTrack = np.zeros(prevFrame.shape[:2])
 prevPrevPrevTrack = np.zeros(prevFrame.shape[:2])
 
-numFrames = int(cap.get(cv2.cv.CV_CAP_PROP_FRAME_COUNT))
-size = (int(cap.get(cv2.cv.CV_CAP_PROP_FRAME_WIDTH)),
-        int(cap.get(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT)))
+numFrames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+size = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+        int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
 
 g_trajectories = []
 g_misfits = []
@@ -419,151 +475,205 @@ g_powderPoints = []
 g_frameIndex = 0
 g_centers = dict()
 
-pixels = np.empty((shape[0], shape[1], 100))
+medianImage = getMedianImage(cap, 100)
+cv2.imshow('median', medianImage)
 
-while cap.isOpened() and g_frameIndex < 100:
-    print "FRAME: ",  g_frameIndex
+particlePoints = getParticlePoints(cap, medianImage)
 
-    ret, frame = grabframe(cap)
+touchedPoints = dict()
 
-    if ret == True:
-        pixels[:,:,g_frameIndex] = frame
-    else:
-        break
-
-    # Keep track of a frame index
-    g_frameIndex = g_frameIndex + 1
-
-medainImage = np.median(pixels, axis=2)
-cv2.imshow('median', medainImage)
-
-# Go back to first frame
-cap.set(cv2.cv.CV_CAP_PROP_POS_FRAMES, 0)
-
-g_frameIndex = 0
-while cap.isOpened():
-    print "FRAME: ",  g_frameIndex
-
-    ret, frame = grabframe(cap)
-
-    if ret == True:
-        diff = np.subtract(frame, medainImage)
-
-        scaled = scaleOneSided(diff)
-
-        centers = getCenters(scaled)
-
-        if centers:
-            g_centers[g_frameIndex] = centers
-
-        cv2.imshow('scaled', scaled)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-    else:
-        break
-
-    # Keep track of a frame index
-    g_frameIndex = g_frameIndex + 1
+print "PARTICLE POINTS:", particlePoints
 
 segments = []
 
-for i in xrange(1, 10000):
-    t1 = random.choice(g_centers.keys())
-    t2 = t1 + 1
-    while not t2 in g_centers.keys() and t2 <= numFrames:
-        t2 = t2 + 1
+touchedPoints = dict()
 
-    if t2 >= numFrames:
+for t1 in particlePoints.keys():
+    if not t1 in particlePoints:
+        "CONTINUING"
         continue
 
-    p1 = random.choice(g_centers[t1])
-    p2, _ = findClosest(p1, g_centers[t2])
+    points = particlePoints[t1]
+    print "Checking frame", t1
+    for p1 in points:
+        t2 = t1 + 1
+        while not t2 in particlePoints and t2 < numFrames:
+            t2 = t2 + 1
 
-    dT = t2 - t1
-    dX = p2[0] - p1[0]
-    dY = p2[1] - p1[1]
+        if t2 >= numFrames:
+            continue
 
-    mX = dX / dT
-    mY = dY / dT
-    bX = p1[0] - mX*t1
-    bY = p1[1] - mY*t1
+        p2, _ = findClosest(p1, particlePoints[t2])
+        
+        dT = t2 - t1
+        dX = p2[0] - p1[0]
+        dY = p2[1] - p1[1]
 
-    for _ in xrange(1, 10):
-        debugImage = np.zeros((shape[0], shape[1], 3), dtype=np.uint8)
-        inlierCount = 0
-        inliers = []
-        t = t2 + 1
-        x = bX + t * mX 
-        y = bY + t * mY 
+        mX = dX / dT
+        mY = dY / dT
+        bX = p1[0] - mX*t1
+        bY = p1[1] - mY*t1
 
-        skipCounter = 0
-        while x > 0 and x < shape[1] and y > 0 and y < shape[0] and t < numFrames and skipCounter < 10:
-            if t in g_centers.keys():
-                cv2.circle(debugImage, (int(x), int(y)), 4, (255, 0, 0))
-                closest, distance = findClosest((x, y), g_centers[t])
-                if distance < 5:
-                    inliers.append((t, closest[0], closest[1]))
-                    inlierCount = inlierCount + 1
-                    skipCounter = 0
-                    cv2.circle(debugImage, closest, 4, (0, 255, 0))
-                else:
-                    skipCounter = skipCounter + 1
-                    cv2.circle(debugImage, closest, 4, (0, 0, 255))
-            t = t + 1
+        for _ in xrange(1, 10):
+            debugImage = np.zeros((shape[0], shape[1], 3), dtype=np.uint8)
+            inlierCount = 0
+            inliers = []
+            t = t2 + 1
             x = bX + t * mX 
             y = bY + t * mY 
 
-        t = t1 - 1
-        x = bX + t * mX 
-        y = bY + t * mY 
+            skipCounter = 0
+            while x > 0 and x < shape[1] and y > 0 and y < shape[0] and t < numFrames and skipCounter < 7:
+                if t in particlePoints:
+                    cv2.circle(debugImage, (int(x), int(y)), 4, (255, 0, 0))
+                    closest, distance = findClosest((x, y), particlePoints[t])
+                    if distance < 7:
+                        inliers.append((t, closest[0], closest[1]))
+                        inlierCount = inlierCount + 1
+                        skipCounter = 0
+                        cv2.circle(debugImage, closest, 4, (0, 255, 0))
+                    else:
+                        skipCounter = skipCounter + 1
+                        cv2.circle(debugImage, closest, 4, (0, 0, 255))
+                t = t + 1
+                x = bX + t * mX 
+                y = bY + t * mY 
 
-        skipCounter = 0
-        while x > 0 and x < shape[1] and y > 0 and y < shape[0] and t > 0 and skipCounter < 10:
-            if t in g_centers.keys():
-                cv2.circle(debugImage, (int(x), int(y)), 4, (255, 0, 0))
-                closest, distance = findClosest((x, y), g_centers[t])
-                if distance < 5:
-                    inliers.append((t, closest[0], closest[1]))
-                    inlierCount = inlierCount + 1
-                    skipCounter = 0
-                    cv2.circle(debugImage, closest, 4, (0, 255, 0))
-                else:
-                    skipCounter = skipCounter + 1 
-                    cv2.circle(debugImage, closest, 4, (0, 0, 255))
-
-            t = t - 1
+            t = t1 - 1
             x = bX + t * mX 
             y = bY + t * mY 
 
-        if not inliers:
+            skipCounter = 0
+            while x > 0 and x < shape[1] and y > 0 and y < shape[0] and t > 0 and skipCounter < 7:
+                if t in particlePoints:
+                    cv2.circle(debugImage, (int(x), int(y)), 4, (255, 0, 0))
+                    closest, distance = findClosest((x, y), particlePoints[t])
+                    if distance < 7:
+                        inliers.append((t, closest[0], closest[1]))
+                        inlierCount = inlierCount + 1
+                        skipCounter = 0
+                        cv2.circle(debugImage, closest, 4, (0, 255, 0))
+                    else:
+                        skipCounter = skipCounter + 1 
+                        cv2.circle(debugImage, closest, 4, (0, 0, 255))
+
+                t = t - 1
+                x = bX + t * mX 
+                y = bY + t * mY 
+
+            if not inliers:
+                break
+
+            mX, bX, rX, pX, eX = scipy.stats.linregress([(inlier[0], inlier[1]) for inlier in inliers])
+            mY, bY, rY, pY, eY = scipy.stats.linregress([(inlier[0], inlier[2]) for inlier in inliers])
+
+        if len(inliers) > 5:
+            print "Segment Found!"
+            for t, x, y in inliers:
+                if t in particlePoints:
+                    particlePoints[t].remove((x,y))
+                    if not particlePoints[t]:
+                        del particlePoints[t]
+                if t in touchedPoints:
+                    touchedPoints[t].append((x,y))
+                else:
+                    touchedPoints[t] = [(x,y)]
+
+            tMin = np.amin(inliers, axis=0)[0]
+            tMax = np.amax(inliers, axis=0)[0]
+        
+            t = tMax + 1
+            x = bX + t * mX 
+            y = bY + t * mY 
+
+            skipCounter = 0
+            while x > 0 and x < shape[1] and y > 0 and y < shape[0] and t < numFrames and skipCounter < 2:
+                if t in touchedPoints:
+                    closest, distance = findClosest((x, y), touchedPoints[t])
+                    if distance < 7:
+                        print "Found Overlapping inlier +!"
+                        inliers.append((t, closest[0], closest[1]))
+                        tMax = t
+                        skipCounter = 0
+                        cv2.circle(debugImage, closest, 4, (255, 255, 255))
+                    else:
+                        skipCounter = skipCounter + 1
+
+                t = t + 1
+                x = bX + t * mX 
+                y = bY + t * mY 
+
+            t = tMin - 1
+            x = bX + t * mX 
+            y = bY + t * mY 
+
+            skipCounter = 0
+            while x > 0 and x < shape[1] and y > 0 and y < shape[0] and t > 0 and skipCounter < 2:
+                if t in touchedPoints:
+                    closest, distance = findClosest((x, y), touchedPoints[t])
+                    if distance < 7:
+                        print "Found Overlapping inlier -!"
+                        inliers.append((t, closest[0], closest[1]))
+                        tMin = t
+                        skipCounter = 0
+                        cv2.circle(debugImage, closest, 4, (255, 255, 255))
+                    else:
+                        skipCounter = skipCounter + 1
+
+                t = t - 1
+                x = bX + t * mX 
+                y = bY + t * mY 
+
+            segments.append((mX, bX, mY, bY, tMin, tMax))
+
+        cv2.imshow('debug', debugImage)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
-        mX, bX, rX, pX, eX = scipy.stats.linregress([(inlier[0], inlier[1]) for inlier in inliers])
-        mY, bY, rY, pY, eY = scipy.stats.linregress([(inlier[0], inlier[2]) for inlier in inliers])
+collisions = []
+for segment1 in segments:
+    for segment2 in segments:
+        if segment2 == segment1:
+            continue
+        
+        tEnd = segment1[5]
+        tBeg = segment2[4]
 
-    if len(inliers) > 4:
-        tMin = np.amin(inliers, axis=0)[0]
-        tMax = np.amax(inliers, axis=0)[0]
-        segments.append((mX, bX, mY, bY, tMin, tMax))
-        print "Segment Found!"
-        for t, x, y in inliers:
-            if g_centers[t]:
-                g_centers[t].remove((x,y))
-                if not g_centers[t]:
-                    del g_centers[t]
+        xEnd = segment1[0] * tEnd + segment1[1]
+        yEnd = segment1[2] * tEnd + segment1[3]
+    
+        xStart = segment2[0] * tBeg + segment2[1]
+        yStart = segment2[2] * tBeg + segment2[3]
 
-    cv2.imshow('debug', debugImage)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+        distance = euclideanDistance((xStart, yStart), (xEnd, yEnd))
+
+        print "tEnd:",tEnd
+        print "tBeg:",tBeg
+        print "Distance:",distance
+
+        if abs(tEnd - tBeg) < 5 and distance < 50:
+            tCollision = int((tBeg + tEnd) / 2)
+            xCollision = int((xStart + xEnd) / 2)
+            yCollision = int((yStart + yEnd) / 2)          
+
+            #if segment1[0] == segment2[0]:
+             #   tCollision = 0
+            #else:
+            #    tCollision = (segment2[1] - segment1[1]) / (segment1[0] - segment2[0])
+            #xCollision = int(segment1[0] * tCollision + segment1[1])
+            #yCollision = int(segment1[2] * tCollision + segment1[3])
+
+            collisions.append((tCollision, xCollision, yCollision))
+            print "Matched Ends!",(tCollision, xCollision, yCollision)
 
 # Go back to first frame
-cap.set(cv2.cv.CV_CAP_PROP_POS_FRAMES, 0)
+cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
 g_frameIndex = 0
 while cap.isOpened():
     print "FRAME: ",  g_frameIndex
 
-    ret, frame = grabframe(cap)
+    ret, frame = cap.read()
 
     if ret == True:
         for segment in segments:
@@ -574,7 +684,11 @@ while cap.isOpened():
                 y1 = int(segment[2] * segment[4] + segment[3])
                 x2 = int(segment[0] * g_frameIndex + segment[1])
                 y2 = int(segment[2] * g_frameIndex + segment[3])
-                cv2.line(frame, (x1, y1), (x2, y2), (255, 0, 255), 2)
+                cv2.line(frame, (x1, y1), (x2, y2), (255, 0, 255), 1)
+
+        for t, x, y in collisions:
+            if t > g_frameIndex - 2 and t < g_frameIndex + 2:
+                cv2.circle(frame, (x, y), 3, (255, 255, 0))
 
         cv2.imshow('segments', frame)
         if cv2.waitKey(0) & 0xFF == ord('q'):
