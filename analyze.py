@@ -5,6 +5,7 @@ import math
 import random
 import scipy.stats
 import copy
+import matplotlib.pyplot as plt
 
 import numpy as np
 import cv2
@@ -12,6 +13,7 @@ import cv2
 def normalize(img):
     mean, stddev = cv2.meanStdDev(img) 
     return (img - mean) / stddev 
+
 def grabframe(cap):
     ret, frameRaw = cap.read()
 
@@ -35,7 +37,7 @@ def scale(img):
 
 def scaleOneSided(img):
     mean, stddev = cv2.meanStdDev(img)
-    img = 255 * (img - mean) / (stddev * 15)
+    img = 255 * (img - mean) / (stddev * 12)
     img = np.clip(img, 0, 255)
     img = img.astype(np.uint8)
     return img
@@ -163,11 +165,12 @@ def getCenters(diff):
     kernelOpen = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=np.uint8)
     track = cv2.morphologyEx(track, cv2.MORPH_CLOSE, kernelOpen)
     track = cv2.morphologyEx(track, cv2.MORPH_OPEN, kernelOpen)
-    diff = np.maximum(diff, track)
 
-    cv2.imshow('blobs', track)
+    trackRGB = cv2.cvtColor(track, cv2.COLOR_GRAY2RGB)
+    blobsVid.write(trackRGB)
+    cv2.imshow('blobs', trackRGB)
 
-    _, contours, _ = cv2.findContours(track, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(track, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     centers = []
     for c in contours:
@@ -400,8 +403,8 @@ def findClosest(x, points):
     return closestPoint, closestDistance
 
 def getMedianImage(cap, maxNumFrames):
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    width = int(cap.get(cv2.cv.CV_CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT))
     pixels = np.empty((height, width, 100))
 
     g_frameIndex = 0
@@ -423,7 +426,7 @@ def getParticlePoints(cap, medianImage):
     particlePoints = dict()
 
     # Go back to first frame
-    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    cap.set(cv2.cv.CV_CAP_PROP_POS_FRAMES, 0)
  
     g_frameIndex = 0
     while cap.isOpened():
@@ -463,9 +466,12 @@ prevTrack = np.zeros(prevFrame.shape[:2])
 prevPrevTrack = np.zeros(prevFrame.shape[:2])
 prevPrevPrevTrack = np.zeros(prevFrame.shape[:2])
 
-numFrames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-size = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-        int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+numFrames = int(cap.get(cv2.cv.CV_CAP_PROP_FRAME_COUNT))
+size = (int(cap.get(cv2.cv.CV_CAP_PROP_FRAME_WIDTH)),
+        int(cap.get(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT)))
+
+blobsVid = cv2.VideoWriter('blobs.avi', cv2.cv.FOURCC('X','V','I','D'), 60, size)
+linesVid = cv2.VideoWriter('lines.avi', cv2.cv.FOURCC('X','V','I','D'), 60, size)
 
 g_trajectories = []
 g_misfits = []
@@ -478,14 +484,33 @@ g_centers = dict()
 medianImage = getMedianImage(cap, 100)
 cv2.imshow('median', medianImage)
 
+sourcePoints = getPoints(medianImage.copy())
+
+INVALID_COORDS_MESSAGE = "Invalid Coordinates. Input as x, y"
+destinationPoints = []
+print "You selected", len(sourcePoints), "points. Please enter the corresponding physical coordinates: "
+for p in sourcePoints:
+    coords = []
+    while len(coords) != 2:
+        try:
+            coords = input(str(p) + ": ")
+            if len(coords) != 2:
+                print INVALID_COORDS_MESSAGE
+            else:
+                destinationPoints.append(coords)
+        except NameError:
+            print INVALID_COORDS_MESSAGE
+
+H, mask = cv2.findHomography(np.asarray(sourcePoints), np.asarray(destinationPoints))
+
+print "Here's the calculated homography matrix:", H
+
 particlePoints = getParticlePoints(cap, medianImage)
 
+cv2.destroyAllWindows()
+
 touchedPoints = dict()
-
-print "PARTICLE POINTS:", particlePoints
-
 segments = []
-
 touchedPoints = dict()
 
 for t1 in particlePoints.keys():
@@ -514,7 +539,7 @@ for t1 in particlePoints.keys():
         bX = p1[0] - mX*t1
         bY = p1[1] - mY*t1
 
-        for _ in xrange(1, 10):
+        for _ in xrange(1, 50):
             debugImage = np.zeros((shape[0], shape[1], 3), dtype=np.uint8)
             inlierCount = 0
             inliers = []
@@ -567,7 +592,7 @@ for t1 in particlePoints.keys():
             mX, bX, rX, pX, eX = scipy.stats.linregress([(inlier[0], inlier[1]) for inlier in inliers])
             mY, bY, rY, pY, eY = scipy.stats.linregress([(inlier[0], inlier[2]) for inlier in inliers])
 
-        if len(inliers) > 5:
+        if len(inliers) > 4:
             print "Segment Found!"
             for t, x, y in inliers:
                 if t in particlePoints:
@@ -582,48 +607,48 @@ for t1 in particlePoints.keys():
             tMin = np.amin(inliers, axis=0)[0]
             tMax = np.amax(inliers, axis=0)[0]
         
-            t = tMax + 1
-            x = bX + t * mX 
-            y = bY + t * mY 
-
-            skipCounter = 0
-            while x > 0 and x < shape[1] and y > 0 and y < shape[0] and t < numFrames and skipCounter < 2:
-                if t in touchedPoints:
-                    closest, distance = findClosest((x, y), touchedPoints[t])
-                    if distance < 7:
-                        print "Found Overlapping inlier +!"
-                        inliers.append((t, closest[0], closest[1]))
-                        tMax = t
-                        skipCounter = 0
-                        cv2.circle(debugImage, closest, 4, (255, 255, 255))
-                    else:
-                        skipCounter = skipCounter + 1
-
-                t = t + 1
-                x = bX + t * mX 
-                y = bY + t * mY 
-
-            t = tMin - 1
-            x = bX + t * mX 
-            y = bY + t * mY 
-
-            skipCounter = 0
-            while x > 0 and x < shape[1] and y > 0 and y < shape[0] and t > 0 and skipCounter < 2:
-                if t in touchedPoints:
-                    closest, distance = findClosest((x, y), touchedPoints[t])
-                    if distance < 7:
-                        print "Found Overlapping inlier -!"
-                        inliers.append((t, closest[0], closest[1]))
-                        tMin = t
-                        skipCounter = 0
-                        cv2.circle(debugImage, closest, 4, (255, 255, 255))
-                    else:
-                        skipCounter = skipCounter + 1
-
-                t = t - 1
-                x = bX + t * mX 
-                y = bY + t * mY 
-
+#            t = tMax + 1
+#            x = bX + t * mX 
+#            y = bY + t * mY 
+#
+#            skipCounter = 0
+#            while x > 0 and x < shape[1] and y > 0 and y < shape[0] and t < numFrames and skipCounter < 3:
+#                if t in touchedPoints:
+#                    closest, distance = findClosest((x, y), touchedPoints[t])
+#                    if distance < 3:
+#                        print "Found Overlapping inlier +!"
+#                        inliers.append((t, closest[0], closest[1]))
+#                        tMax = t
+#                        skipCounter = 0
+#                        cv2.circle(debugImage, closest, 4, (255, 255, 255))
+#                    else:
+#                        skipCounter = skipCounter + 1
+#
+#                t = t + 1
+#                x = bX + t * mX 
+#                y = bY + t * mY 
+#
+#            t = tMin - 1
+#            x = bX + t * mX 
+#            y = bY + t * mY 
+#
+#            skipCounter = 0
+#            while x > 0 and x < shape[1] and y > 0 and y < shape[0] and t > 0 and skipCounter < 3:
+#                if t in touchedPoints:
+#                    closest, distance = findClosest((x, y), touchedPoints[t])
+#                    if distance < 3:
+#                        print "Found Overlapping inlier -!"
+#                        inliers.append((t, closest[0], closest[1]))
+#                        tMin = t
+#                        skipCounter = 0
+#                        cv2.circle(debugImage, closest, 4, (255, 255, 255))
+#                    else:
+#                        skipCounter = skipCounter + 1
+#
+#                t = t - 1
+#                x = bX + t * mX 
+#                y = bY + t * mY 
+#
             segments.append((mX, bX, mY, bY, tMin, tMax))
 
         cv2.imshow('debug', debugImage)
@@ -635,39 +660,54 @@ for segment1 in segments:
     for segment2 in segments:
         if segment2 == segment1:
             continue
-        
-        tEnd = segment1[5]
-        tBeg = segment2[4]
+ 
+        tBeg1 = segment1[4]
+        tEnd1 = segment1[5]
+        tBeg2 = segment2[4]
+        tEnd2 = segment2[5]
 
-        xEnd = segment1[0] * tEnd + segment1[1]
-        yEnd = segment1[2] * tEnd + segment1[3]
+        xBeg1 = segment1[0] * tBeg1 + segment1[1]
+        yBeg1 = segment1[2] * tBeg1 + segment1[3]
+        xEnd1 = segment1[0] * tEnd1 + segment1[1]
+        yEnd1 = segment1[2] * tEnd1 + segment1[3]
     
-        xStart = segment2[0] * tBeg + segment2[1]
-        yStart = segment2[2] * tBeg + segment2[3]
+        xBeg2 = segment2[0] * tBeg2 + segment2[1]
+        yBeg2 = segment2[2] * tBeg2 + segment2[3]
+        xEnd2 = segment2[0] * tEnd2 + segment2[1]
+        yEnd2 = segment2[2] * tEnd2 + segment2[3]
 
-        distance = euclideanDistance((xStart, yStart), (xEnd, yEnd))
+        v1 = (xEnd1 - xBeg1, yEnd1 - yBeg1)
+        v2 = (xEnd2 - xBeg2, yEnd2 - yBeg2)
 
-        print "tEnd:",tEnd
-        print "tBeg:",tBeg
-        print "Distance:",distance
+        mag1 = np.linalg.norm(v1)
+        mag2 = np.linalg.norm(v2)
 
-        if abs(tEnd - tBeg) < 5 and distance < 50:
-            tCollision = int((tBeg + tEnd) / 2)
-            xCollision = int((xStart + xEnd) / 2)
-            yCollision = int((yStart + yEnd) / 2)          
+        if mag1 == 0 or mag2 == 0:
+            continue
 
-            #if segment1[0] == segment2[0]:
-             #   tCollision = 0
-            #else:
-            #    tCollision = (segment2[1] - segment1[1]) / (segment1[0] - segment2[0])
-            #xCollision = int(segment1[0] * tCollision + segment1[1])
-            #yCollision = int(segment1[2] * tCollision + segment1[3])
+        distance = euclideanDistance((xBeg2, yBeg2), (xEnd1, yEnd1))
 
-            collisions.append((tCollision, xCollision, yCollision))
-            print "Matched Ends!",(tCollision, xCollision, yCollision)
+        if abs(tEnd1 - tBeg2) < 4 and distance < 25:
+            tCollision = int((tBeg2 + tEnd1) / 2)
+            xCollision = int((xBeg2 + xEnd1) / 2)
+            yCollision = int((yBeg2 + yEnd1) / 2)          
+
+            cosTheta = (v1[0] * v2[0] + v1[1] * v2[1]) / (mag1 * mag2) 
+
+            v1_hat = (v1[1] / mag1)
+
+            print "cosTheta:",cosTheta
+            print "v1_hat:",v1_hat
+
+            if cosTheta < 0.8 and v1_hat > 0.1:
+                collisions.append((tCollision, xCollision, yCollision))
+                print "Matched Ends!",(tCollision, xCollision, yCollision)
+                
+
+cv2.destroyAllWindows()
 
 # Go back to first frame
-cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+cap.set(cv2.cv.CV_CAP_PROP_POS_FRAMES, 0)
 
 g_frameIndex = 0
 while cap.isOpened():
@@ -691,7 +731,8 @@ while cap.isOpened():
                 cv2.circle(frame, (x, y), 3, (255, 255, 0))
 
         cv2.imshow('segments', frame)
-        if cv2.waitKey(0) & 0xFF == ord('q'):
+        linesVid.write(frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
     else:
         break
@@ -700,6 +741,30 @@ while cap.isOpened():
     g_frameIndex = g_frameIndex + 1
 
 cap.release()
+blobsVid.release()
+linesVid.release()
 
 cv2.destroyAllWindows()
+
+# Warp the coordinates
+powderPoints_warped = []
+for p in collisions:
+    p_warped = np.dot(H, [ [p[1]], [p[2]], [1] ])
+    p_warped = p_warped / p_warped[2]
+    powderPoints_warped.append((p[0], p_warped[0][0], p_warped[1][0]))
+
+centroid = np.sum(powderPoints_warped, axis=0) / float(len(powderPoints_warped))
+
+f = open('points.csv', 'w')
+
+for p in powderPoints_warped:
+    t = p[0]
+    x = p[1] - centroid[1]
+    y = p[2] - centroid[2]
+    f.write(str(t) + ', ' + str(y) + ', ' + str(y) + '\n')
+    plt.scatter(x, y)
+
+f.close()
+
+plt.show()
 
