@@ -50,10 +50,14 @@ print "numInliers:", len(inliers)
 x = [px - centroid[0] for px in points[:,0]]
 y = [py - centroid[1] for py in points[:,1]]
 
-weights = np.ones(len(x)) / len(x)
-heatmap, xedges, yedges = np.histogram2d(x, y, bins=15, range=((-0.25,0.25),(-0.25,0.25)), weights=weights)
+heatmap, xedges, yedges = np.histogram2d(x, y, bins=15, range=((-0.25,0.25),(-0.25,0.25)))
+
+heatmap = heatmap * 1 / np.max(heatmap)
 
 xx, yy = np.mgrid[0:heatmap.shape[0], 0:heatmap.shape[1]]
+
+xx = (xx * 0.25 / heatmap.shape[0] - 0.125) * 25.4
+yy = (yy * 0.25 / heatmap.shape[1] - 0.125) * 25.4
 
 #X = []
 #Y = []
@@ -68,15 +72,21 @@ xx, yy = np.mgrid[0:heatmap.shape[0], 0:heatmap.shape[1]]
 
 fig = plt.figure()
 ax = fig.gca(projection='3d')
-surf = ax.plot_surface(xx, yy, heatmap, rstride = 1, cstride = 1, cmap='hot', linewidth=0, antialiased=False)
+
+ax.set_title('Powder Particle Spatial Distribution')
+ax.set_xlabel('(mm)')
+ax.set_ylabel('(mm)')
+ax.set_zlabel('Relative Particle Frequency')
+
+surf = ax.plot_surface(xx, yy, heatmap, rstride = 1, cstride = 1, cmap='plasma', linewidth=0, antialiased=False)
 #ax.set_zlim(0, 0.01)
 
 plt.show()
 
-#extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
 #extent = [-0.0025, 0.0025, -0.0025, 0.0025]
 
 #plt.clf()
-plt.imshow(heatmap.T, extent=extent, origin='lower', cmap='hot')
+plt.imshow(heatmap.T, extent=extent, origin='lower', cmap='plasma')
 plt.show()
 
