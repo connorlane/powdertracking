@@ -50,7 +50,9 @@ print "numInliers:", len(inliers)
 x = [px - centroid[0] for px in points[:,0]]
 y = [py - centroid[1] for py in points[:,1]]
 
-heatmap, xedges, yedges = np.histogram2d(x, y, bins=15, range=((-0.25,0.25),(-0.25,0.25)))
+WIDTH = 0.5
+
+heatmap, xedges, yedges = np.histogram2d(x, y, bins=15, range=((-WIDTH, WIDTH),(-WIDTH, WIDTH)))
 
 heatmap = heatmap * 1 / np.max(heatmap)
 
