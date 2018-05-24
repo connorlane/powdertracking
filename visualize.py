@@ -1,8 +1,14 @@
 
 import cv2
-import pickle
+import cPickle as pickle
+import sys
+import os
 
-def playbackResults(cap, collisions, segments, segmentIdMap, scale):
+import trackingEngine
+
+def playbackResults(videoFile, collisions, segments, segmentIdMap, scale, speed):
+	cap = cv2.VideoCapture(videoFile)
+
 	width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 	height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
@@ -47,7 +53,7 @@ def playbackResults(cap, collisions, segments, segmentIdMap, scale):
 
 			cv2.imshow('segments', frame)
 			linesVid.write(frame)
-			if cv2.waitKey(1) & 0xFF == ord('q'):
+			if cv2.waitKey(speed) & 0xFF == ord('q'):
 				break
 		else:
 			break
@@ -58,4 +64,43 @@ def playbackResults(cap, collisions, segments, segmentIdMap, scale):
 	linesVid.release()
 
 	return
+
+
+def printUsage():
+	print "usage:", sys.argv[0], "<video file>, <image scale factor>, <playback speed>"
+	print """\tnote: must have a .p file for the given video. The .p file should have 
+           the same basename as the video file. Playback speed is in milliseconds 
+           per frame, except when zero. Zero causes the video to wait for a keypress 
+           between frames"""
+
+if __name__ == "__main__":
+
+	if len(sys.argv) != 4:
+		printUsage()
+		sys.exit(-1)
+
+	videoFile = sys.argv[1]
+	scale = float(sys.argv[2])
+	playbackSpeed = int(sys.argv[3])
+
+	if not os.path.isfile(videoFile):
+		print "Error reading file"
+		printUsage()
+		sys.exit(-1)
+
+	# Get the base name of the video file. We'll use this for naming data files
+	fileNameOnly = os.path.basename(videoFile)
+	baseName = os.path.splitext(fileNameOnly)[0]
+
+	# Get the pickle file name
+	pickleFile = baseName + ".p"
+
+	if not os.path.isfile(pickleFile):
+		print "Error pickle file"
+		printUsage()
+		sys.exit(-1)
+
+	collisions, segments, segmentIdMap = trackingEngine.analyze.load(pickleFile)
+
+	playbackResults(videoFile, collisions, segments, segmentIdMap, scale, playbackSpeed)
 
