@@ -7,42 +7,6 @@ import sys
 
 import trackingEngine.util
 
-_selectedPoints = []
-_currentImage = None
-_getPointsWindowName = "Select Target Positions"
-
-# Callback for getting the mouse click locations
-def getClick(event, x, y, _, __):
-    global _selectedPoints
-    global _currentImage
-
-    if event == cv2.EVENT_LBUTTONDOWN:
-            _selectedPoints.append((float(x), float(y)))
-            cv2.circle(_currentImage, (x, y), 5, (0, 255, 0))
-            cv2.imshow(_getPointsWindowName, _currentImage)
-
-
-# Gets mouse click locations on the specified image (press 'q') to finish
-def getTargetLocations(image):
-    global _selectedPoints
-    global _currentImage
-
-    _selectedPoints = []
-    _currentImage = image
-
-    cv2.namedWindow(_getPointsWindowName)
-    cv2.setMouseCallback(_getPointsWindowName, getClick)
-
-    while True:
-            cv2.imshow(_getPointsWindowName, image)
-            key = cv2.waitKey(1) & 0xFF
-
-            if key == ord("q"):
-                break
-
-    return _selectedPoints
-
-
 def getPhysicalCoordinates(sourcePoints):
 	INVALID_COORDS_MESSAGE = "Invalid Coordinates. Input as x, y"
 	destinationPoints = []
@@ -78,7 +42,7 @@ def interactiveHomographySelection(videoFile):
 
 	# Get the image coordinates of the target points in the image
 	print "Select 4 or more target points in the median image, then press 'Q'"
-	sourcePoints = getTargetLocations(medianImage)
+	sourcePoints = trackingEngine.util.getTargetLocations(medianImage)
 
 	# Get the corresponding physical locations of the target points
 	print "You selected", len(sourcePoints), \
@@ -123,8 +87,8 @@ if __name__ == "__main__":
 
 	homographyFile = baseName + ".hom"
 
-	H = interactiveHomographySelection(videoFile, homographyFile)
+	H = interactiveHomographySelection(videoFile)
 
-	save(H)
+	save(H, homographyFile)
 
 

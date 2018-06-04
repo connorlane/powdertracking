@@ -91,6 +91,24 @@ def generateCsvFile(collisions, H, csvFileName):
 	f.close()
 
 
+def save(collisions, segments, segmentIdMap, pickleFile):
+	# Pickle the trajectories and collisions
+	resultsData = {
+		"collisions": collisions,
+		"segments": segments,
+		"segmentIdMap": segmentIdMap,
+	}
+	with open(pickleFile, 'w') as outfile:
+		pickle.dump(resultsData, outfile)
+
+
+def load(pickleFile):
+	with open(pickleFile, 'r') as infile:
+		rd = pickle.load(infile)
+
+	return rd["collisions"], rd["segments"], rd["segmentIdMap"]
+	
+
 if __name__ == "__main__":
 	def printUsage():
 		print "Usage:", sys.argv[0], "<video file>"
@@ -120,7 +138,9 @@ if __name__ == "__main__":
 		printUsage()
 		sys.exit(-1)
 
-	collisions, segment, segmentIdMap = run(videoFile)	
+	pickleFile = baseName + ".p"
+
+	collisions, segments, segmentIdMap = run(videoFile)	
 
 	csvFileName = baseName + ".csv"
 
@@ -128,19 +148,6 @@ if __name__ == "__main__":
 
 	generateCsvFile(collisions, H, csvFileName)
 
-def save(collisions, segments, segmentIdMap, pickleFile):
-	# Pickle the trajectories and collisions
-	resultsData = {
-		"collisions": collisions,
-		"segments": segments,
-		"segmentIdMap": segmentIdMap,
-	}
-	with open(pickleFile, 'w') as outfile:
-		pickle.dump(resultsData, outfile)
+	save(collisions, segments, segmentIdMap, pickleFile)
 
-def load(pickleFile):
-	with open(pickleFile, 'r') as infile:
-		rd = pickle.load(infile)
 
-	return rd["collisions"], rd["segments"], rd["segmentIdMap"]
-	
