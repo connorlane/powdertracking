@@ -24,7 +24,8 @@ def playbackResults(videoFile, collisions, segments, segmentIdMap, scale, speed)
 	# Go back to first frame
 	cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-	frameindex = 0 while cap.isOpened():
+	frameindex = 0 
+	while cap.isOpened():
 		ret, frame = cap.read()
 
 		if ret is True:
