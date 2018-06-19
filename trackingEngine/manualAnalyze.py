@@ -113,6 +113,13 @@ def run(videoFile, collisions, segments, segmentIdMap):
 				for fp in _falseNegatives[_frameIndex]:
 					cv2.circle(_frame, (int(fp[0]), int(fp[1])), 4, FN_COLOR)
 
+			cv2.putText(_frame,
+						str(_frameIndex),
+						(50, 50),
+						cv2.FONT_HERSHEY_SIMPLEX,
+						1.0,
+						(255, 255, 255))
+
 			cv2.imshow(_getPointsWindowName, _frame)
 
 			quit = False
