@@ -19,7 +19,7 @@ substrate.
 6. Run main.py demo:
 ```python main.py data/samplevideo.mp4```
 7. Visualize (data visualization example):
-```python visualize.py data/samplevideo.mp4```
+```python visualize.py data/samplevideo.m4v```
 8. Generate heatmap (data visualization example):
 ```python heatmap.py samplevideo.csv```
 
