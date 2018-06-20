@@ -1,9 +1,20 @@
+"""
+Tracking algorithm major sub-algorithms. Bulk of the tracking computation 
+perfomed here.
+
+Connor Coward
+19 June 2018
+"""
+
 import cv2
 import numpy as np
 import scipy.stats
 import util
 
 def getCenters(diff):
+	"""Blob detection. Finds potential particle locations in a frame by first 
+       performing a binary threshold operation, dilation, erosion, and then blob
+       detection"""
     ret, track = cv2.threshold(diff, 128, 256, cv2.THRESH_BINARY)
     kernelOpen = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=np.uint8)
     track = cv2.morphologyEx(track, cv2.MORPH_CLOSE, kernelOpen)
@@ -24,6 +35,9 @@ def getCenters(diff):
 
 
 def getParticlePoints(cap, medianImage):
+	"""Loops through entire video, extracting all potential particle locations 
+       in the video"""
+
     particlePoints = dict()
 
     # Go back to first frame
@@ -59,6 +73,7 @@ def getParticlePoints(cap, medianImage):
 
 
 def getSegmentsFromPoints(particlePoints, shape, maxT):
+	"""Attempts to form linear trajectories from points in the frame"""
 	segments = []
 	segmentIdMap = dict()
 	segmentIdCounter = 0
@@ -106,7 +121,9 @@ def getSegmentsFromPoints(particlePoints, shape, maxT):
 					   t < maxT and skipCounter < 7):
 					if t in particlePoints:
 						cv2.circle(debugImage, (int(x), int(y)), 4, (255, 0, 0))
-						closest, distance = util.findClosest((x, y), particlePoints[t])
+						closest, distance = util.findClosest(
+												(x, y), 
+												particlePoints[t])
 						if distance < 7:
 							inliers.append((t, closest[0], closest[1]))
 							inlierCount = inlierCount + 1
@@ -128,7 +145,9 @@ def getSegmentsFromPoints(particlePoints, shape, maxT):
 					   t > 0 and skipCounter < 7):
 					if t in particlePoints:
 						cv2.circle(debugImage, (int(x), int(y)), 4, (255, 0, 0))
-						closest, distance = util.findClosest((x, y), particlePoints[t])
+						closest, distance = util.findClosest(
+												(x, y), 
+												particlePoints[t])
 						if distance < 7:
 							inliers.append((t, closest[0], closest[1]))
 							inlierCount = inlierCount + 1
@@ -145,8 +164,10 @@ def getSegmentsFromPoints(particlePoints, shape, maxT):
 				if not inliers:
 					break
 
-				mX, bX, _, _, _ = scipy.stats.linregress([(inlier[0], inlier[1]) for inlier in inliers])
-				mY, bY, _, _, _ = scipy.stats.linregress([(inlier[0], inlier[2]) for inlier in inliers])
+				mX, bX, _, _, _ = scipy.stats.linregress(
+				    [(inlier[0], inlier[1]) for inlier in inliers])
+				mY, bY, _, _, _ = scipy.stats.linregress(
+				    [(inlier[0], inlier[2]) for inlier in inliers])
 
 			if len(inliers) > 3:
 				for t, x, y in inliers:
@@ -170,7 +191,8 @@ def getSegmentsFromPoints(particlePoints, shape, maxT):
 				while (x > 0 and x < shape[1] and y > 0 and y < shape[0] and
 					   t < maxT and skipCounter < 3):
 					if t in touchedPoints:
-						closest, distance = util.findClosest((x, y), touchedPoints[t])
+						closest, distance = util.findClosest(
+                            (x, y), touchedPoints[t])
 						if distance < 3:
 							inliers.append((t, closest[0], closest[1]))
 							tMax = t
@@ -191,7 +213,8 @@ def getSegmentsFromPoints(particlePoints, shape, maxT):
 				while (x > 0 and x < shape[1] and y > 0 and y < shape[0] and
 					   t > 0 and skipCounter < 3):
 					if t in touchedPoints:
-						closest, distance = util.findClosest((x, y), touchedPoints[t])
+						closest, distance = util.findClosest(
+							(x, y), touchedPoints[t])
 						if distance < 3:
 							inliers.append((t, closest[0], closest[1]))
 							tMin = t
@@ -208,13 +231,15 @@ def getSegmentsFromPoints(particlePoints, shape, maxT):
 				segmentIdMap[segments[-1]] = segmentIdCounter
 				segmentIdCounter = segmentIdCounter + 1
 
-			#cv2.imshow('debug', debugImage)
-			#if cv2.waitKey(1) & 0xFF == ord('q'):
-			#	break
 	return segments, segmentIdMap
 
 
 def getCollisionsFromSegments(segments, segmentIdMap):
+	"""Matches pairs of segments which may together form the trajectory of a 
+       single particle that collides with a planar substrate. Finds situations 
+       where one segment ends just as the next is beginning (which indicates 
+       that the two segments are actually from the same particle after it has 
+	   bounced"""
 	collisions = []
 	for i in xrange(0, len(segments)):
 		segment1 = segments[i]
@@ -273,8 +298,9 @@ def getCollisionsFromSegments(segments, segmentIdMap):
 
 		if bestMatch:
 			collisions.append(bestMatch)
-			print ("Matched Ends!", bestMatch, "Segments:", segmentIdMap[segment1],
-				   segmentIdMap[bestSegment])
+			print ("Matched Ends!", bestMatch, 
+				"Segments:", segmentIdMap[segment1],
+				segmentIdMap[bestSegment])
 
 	return collisions
 

@@ -1,3 +1,10 @@
+"""A main entry point for the tracking software. Demonstrates a typical example 
+   of how to use the modules in this project.
+
+Connor Coward
+19 June 2018
+"""
+
 import sys
 import os.path
 import cPickle as pickle
@@ -50,5 +57,6 @@ else:
 	trackingEngine.analyze.save(collisions, segments, segmentIdMap, pickleFile)
 
 # Play back the results
-visualize.playbackResults(videoFile, collisions, segments, segmentIdMap, 2.0, 10)
+visualize.playbackResults(
+	videoFile, collisions, segments, segmentIdMap, 2.0, 10)
 

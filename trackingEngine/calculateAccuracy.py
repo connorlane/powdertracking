@@ -1,3 +1,9 @@
+"""Simple helper utility to calculate tracking accuracy by comparing manual tracking results and software-generated resutls
+
+Connor Coward
+19 June 2018
+"""
+
 import csv
 import sys
 import numpy as np

@@ -1,3 +1,8 @@
+"""Plays back high speed video with tracking information overlay. Can be used to step through frame by frame and verify the accuracy of the tracking data
+
+Connor Coward
+19 June 2018
+"""
 
 import cv2
 import cPickle as pickle

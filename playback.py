@@ -1,3 +1,11 @@
+"""
+A basic video playback script. Allows navigation forward and backward in 
+the video.
+
+Connor Coward
+19 June 2018
+"""
+
 import cv2
 import sys
 

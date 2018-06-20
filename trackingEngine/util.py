@@ -1,3 +1,10 @@
+"""
+Utilities related to particle tracking
+
+Connor Coward
+19 June 2018
+"""
+
 import cv2
 import numpy as np
 import math
@@ -6,8 +13,9 @@ _selectedPoints = []
 _currentImage = None
 _getPointsWindowName = "Select Target Positions"
 
-# Callback for getting the mouse click locations
+
 def getClick(event, x, y, _, __):
+	"""Callback for getting the mouse click locations"""
     global _selectedPoints
     global _currentImage
 
@@ -17,8 +25,9 @@ def getClick(event, x, y, _, __):
             cv2.imshow(_getPointsWindowName, _currentImage)
 
 
-# Gets mouse click locations on the specified image (press 'q') to finish
 def getTargetLocations(image):
+	"""Gets mouse click locations on the specified image (press 'q') to 
+	   finish"""
     global _selectedPoints
     global _currentImage
 
@@ -40,6 +49,7 @@ def getTargetLocations(image):
 
 
 def grabframe(cap):
+	"""Grab a single grayscale frame from video capture <cap>"""
     ret, frameRaw = cap.read()
 
     frame = None
@@ -53,6 +63,7 @@ def grabframe(cap):
 
 
 def scaleOneSided(img):
+	"""Normalize using a one-tailed distribution"""
     mean, stddev = cv2.meanStdDev(img)
     img = 255 * (img - mean) / (stddev * 12)
     img = np.clip(img, 0, 255)
@@ -61,10 +72,12 @@ def scaleOneSided(img):
 
 
 def euclideanDistance(p1, p2):
+	"""Calculate distance between p1 and p2"""
     return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
 
 
 def findClosest(x, points):
+	"""Find the closest point in <points> to x"""
     closestPoint = points[0]
     closestDistance = euclideanDistance(points[0], x)
     for p in points[1:]:
@@ -76,6 +89,8 @@ def findClosest(x, points):
 
 
 def getMedianImage(cap, maxNumFrames):
+	"""Calculate the mediam image using <maxNumFrames> from 
+	   video capture <cap>"""
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     pixels = np.empty((height, width, 100))

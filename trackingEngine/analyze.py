@@ -1,4 +1,9 @@
-#! /usr/bin/env python
+"""Main tracking algorithm is in this file. Attempts to detect particles 
+colliding with horizontal planar substrate in video
+
+Connor Coward
+19 June 2018
+"""
 
 import sys
 import math
@@ -14,6 +19,8 @@ import util
 import track
 
 def run(videoFile):
+	"""Main tracking routine. Attempts to detect particles colliding with planar
+	   substrate in videoFile"""
 	# Get the base name of the video file. We'll use this for naming data files
 	fileNameOnly = os.path.basename(videoFile)
 	baseName = os.path.splitext(fileNameOnly)[0]
@@ -51,7 +58,8 @@ def run(videoFile):
 
 	# Get segments (particle trajectories) from the noisy list of 
 	#   potential particle locations
-	segments, segmentIdMap = track.getSegmentsFromPoints(particlePoints, shape, numFrames)
+	segments, segmentIdMap = track.getSegmentsFromPoints(
+		particlePoints, shape, numFrames)
 
 	# Calculate collisions from the segments. Collisions are locations
 	#   where one segment ends exactly where another begins.
@@ -69,6 +77,8 @@ def run(videoFile):
 
 
 def generateCsvFile(collisions, H, csvFileName):
+	"""Generates a CSV file of physical coordinates using homography 
+	   transformation matrix H and desired csvFileName"""
 	# Warp the coordinates to real-world coordinates
 	powderPoints_warped = []
 	for p in collisions:
@@ -77,7 +87,8 @@ def generateCsvFile(collisions, H, csvFileName):
 		powderPoints_warped.append((p[0], p_warped[0][0], p_warped[1][0]))
 
 	# Find the centroid
-	centroid = np.sum(powderPoints_warped, axis=0) / float(len(powderPoints_warped))
+	centroid = \
+		np.sum(powderPoints_warped, axis=0) / float(len(powderPoints_warped))
 
 	# Create a CSV file for writing the collision locations
 	f = open(csvFileName, "w")
@@ -92,6 +103,7 @@ def generateCsvFile(collisions, H, csvFileName):
 
 
 def save(collisions, segments, segmentIdMap, pickleFile):
+	"""Saves tracking intermediate data for later analysis"""
 	# Pickle the trajectories and collisions
 	resultsData = {
 		"collisions": collisions,
@@ -103,6 +115,7 @@ def save(collisions, segments, segmentIdMap, pickleFile):
 
 
 def load(pickleFile):
+	"""Loads tracking intermediate data from file"""
 	with open(pickleFile, 'r') as infile:
 		rd = pickle.load(infile)
 
