@@ -14,7 +14,7 @@ import sys
 import random
 
 def getCentroid(arr):
-	"""Calculate the centroid of a 2d array where each row is a 2d point"""
+    """Calculate the centroid of a 2d array where each row is a 2d point"""
     length = arr.shape[0]
     sum_x = np.sum(arr[:, 0])
     sum_y = np.sum(arr[:, 1])
@@ -38,19 +38,19 @@ csvReader = csv.reader(rawFile, delimiter = ',')
 
 # Pull all the data in the csv file into a list
 points = np.array([np.array(
-	[float(item) for item in row[1:3]]) for row in csvReader])
+    [float(item) for item in row[1:3]]) for row in csvReader])
 
 # Perform a simple RANSAC to find the center of the points with 
 #     possible extreme outliers
 bestSeed = points[0]
 bestCount = sum([1 for p in points if np.linalg.norm(p - points[0]) < RADIUS])
 bestInliers = np.array(
-	[p for p in points[1:] if np.linalg.norm(p - points[0]) < RADIUS])
+    [p for p in points[1:] if np.linalg.norm(p - points[0]) < RADIUS])
 
 for x in xrange(0, 100):
     seed = random.choice(points[1:])
     inliers = np.array(
-		[p for p in points[1:] if np.linalg.norm(p - seed) < RADIUS])
+        [p for p in points[1:] if np.linalg.norm(p - seed) < RADIUS])
     if len(inliers) > bestCount:
         bestCount = len(inliers)
         bestSeed = seed
@@ -63,7 +63,7 @@ inliers = bestInliers
 while len(inliers) < 0.5 * len(points):
     centroid = getCentroid(inliers)
     inliers = np.array(
-		[p for p in points[1:] if np.linalg.norm(p - centroid) < radius])
+        [p for p in points[1:] if np.linalg.norm(p - centroid) < radius])
     radius = radius * 1.02
 
 print "numInliers:", len(inliers)
@@ -74,7 +74,7 @@ y = [py - centroid[1] for py in points[:,1]]
 
 # Calculate the heat map values
 heatmap, xedges, yedges = np.histogram2d(
-	x, y, bins=15, range=((-WIDTH, WIDTH),(-WIDTH, WIDTH)))
+    x, y, bins=15, range=((-WIDTH, WIDTH),(-WIDTH, WIDTH)))
 
 # Normalize
 heatmap = heatmap * 1 / np.max(heatmap)
@@ -94,8 +94,8 @@ ax.set_xlabel('(mm)')
 ax.set_ylabel('(mm)')
 ax.set_zlabel('Relative Particle Frequency')
 surf = ax.plot_surface(
-	xx, yy, heatmap, rstride = 1, cstride = 1, cmap='plasma', 
-	linewidth=0, antialiased=False)
+    xx, yy, heatmap, rstride = 1, cstride = 1, cmap='plasma', 
+    linewidth=0, antialiased=False)
 
 # Display the surface map
 plt.show()

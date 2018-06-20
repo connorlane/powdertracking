@@ -15,7 +15,7 @@ _getPointsWindowName = "Select Target Positions"
 
 
 def getClick(event, x, y, _, __):
-	"""Callback for getting the mouse click locations"""
+    """Callback for getting the mouse click locations"""
     global _selectedPoints
     global _currentImage
 
@@ -26,14 +26,14 @@ def getClick(event, x, y, _, __):
 
 
 def getTargetLocations(image):
-	"""Gets mouse click locations on the specified image (press 'q') to 
-	   finish"""
+    """Gets mouse click locations on the specified image (press 'q') to 
+       finish"""
     global _selectedPoints
     global _currentImage
 
     _selectedPoints = []
     _currentImage = image
-	
+    
 
     cv2.namedWindow(_getPointsWindowName)
     cv2.setMouseCallback(_getPointsWindowName, getClick)
@@ -42,14 +42,14 @@ def getTargetLocations(image):
             cv2.imshow(_getPointsWindowName, image)
             key = cv2.waitKey(1) & 0xFF
 
-            if key == ord("a"):
+            if key == ord("q"):
                 break
 
     return _selectedPoints
 
 
 def grabframe(cap):
-	"""Grab a single grayscale frame from video capture <cap>"""
+    """Grab a single grayscale frame from video capture <cap>"""
     ret, frameRaw = cap.read()
 
     frame = None
@@ -63,7 +63,7 @@ def grabframe(cap):
 
 
 def scaleOneSided(img):
-	"""Normalize using a one-tailed distribution"""
+    """Normalize using a one-tailed distribution"""
     mean, stddev = cv2.meanStdDev(img)
     img = 255 * (img - mean) / (stddev * 12)
     img = np.clip(img, 0, 255)
@@ -72,12 +72,12 @@ def scaleOneSided(img):
 
 
 def euclideanDistance(p1, p2):
-	"""Calculate distance between p1 and p2"""
+    """Calculate distance between p1 and p2"""
     return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
 
 
 def findClosest(x, points):
-	"""Find the closest point in <points> to x"""
+    """Find the closest point in <points> to x"""
     closestPoint = points[0]
     closestDistance = euclideanDistance(points[0], x)
     for p in points[1:]:
@@ -89,8 +89,8 @@ def findClosest(x, points):
 
 
 def getMedianImage(cap, maxNumFrames):
-	"""Calculate the mediam image using <maxNumFrames> from 
-	   video capture <cap>"""
+    """Calculate the mediam image using <maxNumFrames> from 
+       video capture <cap>"""
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     pixels = np.empty((height, width, 100))
