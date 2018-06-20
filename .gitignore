@@ -1,4 +1,5 @@
 *.pyc
 *.avi
-points.csv
 *.p
+*.hom
+*.csv
